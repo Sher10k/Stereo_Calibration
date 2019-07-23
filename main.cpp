@@ -11,13 +11,22 @@
 using namespace std;
 using namespace cv;
 
-#define FRAME_WIDTH 640
-#define FRAME_HEIGHT 480
+#define FRAME_WIDTH 2448
+#define FRAME_HEIGHT 2048
+#define BOARD_X 11
+#define BOARD_Y 8
 
-int main(int argc, char *argv[])
+// --- GLOBAL VARIABLES -----------------------------------------------------// 
+
+// --- FUNCTION -------------------------------------------------------------//
+
+
+// --- MAIN -----------------------------------------------------------------//
+int main()  //int argc, char *argv[]
 {
-    QCoreApplication a(argc, argv);
-  
+// --- MAIN VARIABLES -------------------------------------------------------//
+    vector < Mat > ImagesL, ImagesR;                         // FILES IMAGE    
+    
 // --- STEP 1 --- Load left and right frames --------------------------------//
     string pos_dir = "/home/roman/imagesStereo";
     string img_name_L = "/FLZcmCameraBaslerJpegFrame*.png";
@@ -44,123 +53,245 @@ int main(int argc, char *argv[])
         files_set_R.insert(files_R[i]);
         files_R[i] = temp;
     }
-    set_intersection(files_set_L.begin(), files_set_L.end(), 
-                     files_set_R.begin(), files_set_R.end(), 
-                     back_inserter(files_set_LR));          // inserter(files_set_LR, files_set_LR.begin())
+    set_intersection( files_set_L.begin(), files_set_L.end(), 
+                      files_set_R.begin(), files_set_R.end(), 
+                      back_inserter(files_set_LR));          // inserter(files_set_LR, files_set_LR.begin())
     
-    vector< Mat > frame_list_L, frame_list_R;               // FILES IMAGE 
-    Rect myROI(0, 0, 2048, 2448);
+    Rect myROI(0, 0, FRAME_HEIGHT, FRAME_WIDTH);            // 2048 x 2448
     
-    for ( size_t i = 0; i < files_set_LR.size(); i += 12 )
+    unsigned int nFrames = 0;
+    for ( size_t i = 0; i < files_set_LR.size(); i += 1 )      // 1/12 files
     {
         Mat imgL = imread( pos_dir + "/FL" + files_set_LR[i] ); // load the image
         Mat imgR = imread( pos_dir + "/FR" + files_set_LR[i] );
         imgL(Rect(0, 0, 2448, 2048)).copyTo(imgL);
         imgR(Rect(0, 0, 2448, 2048)).copyTo(imgR);
-        frame_list_L.push_back( imgL );
-        frame_list_R.push_back( imgR );
+        ImagesL.push_back( imgL );
+        ImagesR.push_back( imgR );
+        nFrames++;
     }
     
-// --- STEP 2 --- Calibration left camera -----------------------------------//
-    Mat frame, frame2, frame3;
-    Mat frame4 = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC3);
-    int calibrationFlags = CALIB_FIX_K1 | CALIB_FIX_K2 | CALIB_FIX_K3;      // Calibration flags    | CALIB_FIX_K6
-    unsigned int nFrames = static_cast< unsigned int >(files_set_LR.size());
+// --- STEP 2 --- Calibration left and right camera -----------------------------------//
+    Mat frameL, frameR, frameLR;
+    TermCriteria termcritSub( TermCriteria::EPS | TermCriteria::MAX_ITER, 100, 0.0001 );
     
         // ChArUco board variables
     Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::PREDEFINED_DICTIONARY_NAME(10));  // DICT_6X6_250 = 10
         // create charuco board object
-    Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create( 11, 8, 10, 7, dictionary);
+    Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 10, 7, dictionary);
     
-    vector< Mat > allCharucoCornersL, allCharucoCornersR;
-    vector< Mat > allCharucoIdsL, allCharucoIdsR;
-//    vector< Mat > filteredImages;
-//    allCharucoCornersL.reserve(static_cast<unsigned int>(nFrames));
-//    allCharucoIdsL.reserve(static_cast<unsigned int>(nFrames));
-    Ptr<aruco::DetectorParameters> detectorParamsL = aruco::DetectorParameters::create();
-    Ptr<aruco::DetectorParameters> detectorParamsR = aruco::DetectorParameters::create();
-        // collect data from each frame
-    vector< vector< vector< Point2f > > > allCornersL, allCornersR;
-    vector< vector< int > > allIdsL, allIdsR;
-    vector< Mat > allImgsL, allImgsR;
+        // Collect data from each frame
+    vector < vector< vector< Point2f > > > allCornersL, allCornersR;
+    vector < vector< int > > allIdsL, allIdsR;
+    //vector< Mat > allImgsL, allImgsR;
+    vector < vector < Point2f > > allcharucoCornersL, allcharucoCornersR, imagePoints[2]; 
+    vector < Mat > allcharucoIdsL, allcharucoIdsR;
     
-    unsigned int n = 0;
-    while(1)                        // Цикл для определенного числа калибровочных кадров
+    unsigned int nGoodboard = 0;
+    for (unsigned int i = 0; i < nFrames; i++)                        // Цикл для определенного числа калибровочных кадров
     {
+        Mat imgGrayL, imgGrayR;
+        cvtColor(ImagesL[i], imgGrayL, COLOR_BGR2GRAY);
+        cvtColor(ImagesR[i], imgGrayR, COLOR_BGR2GRAY);
         vector< int > idsL, idsR;
         vector< vector< Point2f > > cornersL, cornersR;    
         
             // detect markers
-        aruco::detectMarkers( frame_list_L[n], 
+        aruco::detectMarkers( imgGrayL, 
                               dictionary, 
                               cornersL, 
                               idsL, 
-                              detectorParamsL);
-        aruco::detectMarkers( frame_list_R[n], 
+                              aruco::DetectorParameters::create());
+        aruco::detectMarkers( imgGrayR, 
                               dictionary, 
                               cornersR, 
                               idsR, 
-                              detectorParamsR);
+                              aruco::DetectorParameters::create());
         
-        if ( (idsL.size() > 0) && (idsR.size() > 0) )    // Проверка удачно найденых углов
+        if ( (idsL.size() == BOARD_X * BOARD_Y / 2) && (idsR.size() == BOARD_X * BOARD_Y / 2) )    // Проверка удачно найденых углов == 44
         {
-                // interpolate charuco corners
-            Mat currentCharucoCornersL, currentCharucoIdsL;
-            Mat currentCharucoCornersR, currentCharucoIdsR;
+                // SUB PIXEL DETECTION
+            for (size_t j = 0; j < cornersL.size(); j++)
+            {
+                cornerSubPix( imgGrayL, 
+                              cornersL[j], 
+                              Size(20, 20), 
+                              Size(-1, -1), 
+                              termcritSub);
+            }
+            for (size_t j = 0; j < cornersR.size(); j++)
+            {
+                cornerSubPix( imgGrayR, 
+                              cornersR[j], 
+                              Size(20, 20), 
+                              Size(-1, -1), 
+                              termcritSub);
+            }
+            
+                // Interpolate charuco corners
+            vector < Point2f > charucoCornersL, charucoCornersR;
+            Mat charucoIdsL, charucoIdsR;
             aruco::interpolateCornersCharuco( cornersL, 
                                               idsL, 
-                                              frame_list_L[n], 
+                                              ImagesL[i], 
                                               charucoboard, 
-                                              currentCharucoCornersL,
-                                              currentCharucoIdsL);
+                                              charucoCornersL,
+                                              charucoIdsL);
             aruco::interpolateCornersCharuco( cornersR, 
                                               idsR, 
-                                              frame_list_R[n], 
+                                              ImagesR[i], 
                                               charucoboard, 
-                                              currentCharucoCornersR,
-                                              currentCharucoIdsR);
-                // draw results
-            aruco::drawDetectedMarkers( frame_list_L[n], cornersL );
-            aruco::drawDetectedMarkers( frame_list_R[n], cornersR );
-            if(currentCharucoCornersL.total() > 0) aruco::drawDetectedCornersCharuco( frame_list_L[n], 
-                                                                                      currentCharucoCornersL, 
-                                                                                      currentCharucoIdsL);
-            if(currentCharucoCornersR.total() > 0) aruco::drawDetectedCornersCharuco( frame_list_R[n], 
-                                                                                      currentCharucoCornersR, 
-                                                                                      currentCharucoIdsR);
+                                              charucoCornersR,
+                                              charucoIdsR);
+                // Draw results
+            aruco::drawDetectedMarkers( ImagesL[i], cornersL );
+            aruco::drawDetectedMarkers( ImagesR[i], cornersR );
+            if(charucoCornersL.size() > 0) aruco::drawDetectedCornersCharuco( ImagesL[i], 
+                                                                               charucoCornersL, 
+                                                                               charucoIdsL);
+            if(charucoCornersR.size() > 0) aruco::drawDetectedCornersCharuco( ImagesR[i], 
+                                                                               charucoCornersR, 
+                                                                               charucoIdsR);
             
             cout << "Frame captured" << endl;
             allCornersL.push_back(cornersL);
             allIdsL.push_back(idsL);
+            //allImgsL.push_back(ImagesL[i]);
+            //allcharucoCornersL.push_back(charucoCornersL);
+            imagePoints[0].push_back(charucoCornersL);
+            allcharucoIdsL.push_back(charucoIdsL);
+            
             allCornersR.push_back(cornersR);
             allIdsR.push_back(idsR);
+            //allImgsR.push_back(ImagesR[i]);
+            //allcharucoCornersR.push_back(charucoCornersR);
+            imagePoints[1].push_back(charucoCornersR);
+            allcharucoIdsR.push_back(charucoIdsR);
             
+            ImagesL[i].copyTo(frameL);
+            ImagesR[i].copyTo(frameR);
+            frameLR = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC3);
+            
+            putText( frameL, "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
+            putText( frameR, "R", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
+            
+            Rect r1(0, 0, FRAME_WIDTH, FRAME_HEIGHT);                // Создаем фрагменты для склеивания зображения
+            Rect r2(FRAME_WIDTH, 0, FRAME_WIDTH, FRAME_HEIGHT);
+            frameL.copyTo(frameLR( r1 ));
+            frameR.copyTo(frameLR( r2 ));
+            //imshow("calibration", frameLR);      // Вывод последнего удачного калибровачного кадра и кадра потока
+            imwrite( pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(nGoodboard) + ".png", frameLR);
+            cout << pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(nGoodboard) + ".png" << endl;
+            
+            nGoodboard++;
         }
-        CAP.read(frame3);
-        putText( frame3, 
-                 "Press 'c' to add current frame. 'ESC' to finish and calibrate ChArUco_board",
-                 Point(5, 20), 
-                 FONT_HERSHEY_SIMPLEX, 
-                 0.5, 
-                 Scalar(255, 0, 0), 
-                 2);
-        Rect r1(0, 0, frame3.cols, frame3.rows);                // Создаем фрагменты для склеивания зображения
-        Rect r2(frame3.cols, 0, frame3.cols, frame3.rows);
-        frame3.copyTo(frame4( r1 ));
-        calib_frame.copyTo(frame4( r2 ));
-        imshow("calibration", frame4);      // Вывод последнего удачного калибровачного кадра и кадра потока
-        
-        n++;
     }
+    cout << "nGoodboard = " << nGoodboard << endl;
+    
+    /*for(unsigned int i = 0; i < nGoodboard; i++) 
+    {
+            // interpolate using camera parameters
+        vector< Point2f > currentCharucoCornersL, currentCharucoCornersR;
+        Mat currentCharucoIdsL, currentCharucoIdsR;
+        aruco::interpolateCornersCharuco( allCornersL[i], 
+                                          allIdsL[i], 
+                                          allImgsL[i], 
+                                          charucoboard,
+                                          currentCharucoCornersL, 
+                                          currentCharucoIdsL);
+        aruco::interpolateCornersCharuco( allCornersR[i], 
+                                          allIdsR[i], 
+                                          allImgsR[i], 
+                                          charucoboard,
+                                          currentCharucoCornersR, 
+                                          currentCharucoIdsR);
+
+        allCharucoCornersL.push_back(currentCharucoCornersL);
+        allCharucoIdsL.push_back(currentCharucoIdsL);
+        allCharucoCornersR.push_back(currentCharucoCornersR);
+        allCharucoIdsR.push_back(currentCharucoIdsR);
+    }*/
+    
+        // Calibration left and right camera
+    Matx33d cameraMatrixL, cameraMatrixR;
+    Matx<double, 1, 5> distCoeffsL, distCoeffsR;
+    vector<Mat> rvecsL, tvecsL, rvecsR, tvecsR;
+    int calibrationFlags = CALIB_FIX_K1 | 
+                           CALIB_FIX_K2 | 
+                           CALIB_FIX_K3;      // Calibration flags    | CALIB_FIX_K6
+    calibrateCameraCharuco( imagePoints[0],     // allcharucoCornersL
+                            allcharucoIdsL, 
+                            charucoboard, 
+                            Size(FRAME_WIDTH, FRAME_HEIGHT),
+                            cameraMatrixL,
+                            distCoeffsL,
+                            rvecsL,
+                            tvecsL,
+                            calibrationFlags);
+    FileStorage fs;
+    fs.open("../Stereo_calib_ChArUco.txt", FileStorage::WRITE);    // Write in file data calibration
+    fs << "intrinsicL" << cameraMatrixL;
+    fs << "distCoeffsL" << distCoeffsL;
+    //fs << "rvecsL" << rvecsL;
+    //fs << "tvecsL" << tvecsL;
+    calibrateCameraCharuco( imagePoints[1],     // allcharucoCornersR
+                            allcharucoIdsR, 
+                            charucoboard, 
+                            Size(FRAME_WIDTH, FRAME_HEIGHT),
+                            cameraMatrixR,
+                            distCoeffsR,
+                            rvecsR,
+                            tvecsR,
+                            calibrationFlags);
+    fs << "intrinsicR" << cameraMatrixR;
+    fs << "distCoeffsR" << distCoeffsR;
+    //fs << "rvecsR" << rvecsR;
+    //fs << "tvecsR" << tvecsR;
     
     
-// --- STEP 3 --- Calibration right camera ----------------------------------//
+// --- STEP 3 --- Stereo calibration ----------------------------------------//
     
-    
+    vector < vector < Point3f > > objectPoints;
+    imagePoints[0].resize(nGoodboard);
+    imagePoints[1].resize(nGoodboard);
+    objectPoints.resize(nGoodboard);
+    int squareSize = 1;
+    for(unsigned int i = 0; i < nGoodboard; i++ )
+    {
+        for( int j = 0; j < BOARD_X - 1; j++ )
+            for( int k = 0; k < BOARD_Y - 1; k++ )
+                objectPoints[i].push_back( Point3f( k * squareSize, j * squareSize, 0 ) );
+    }
+    Mat R, T, E, F;
+    int Stereo_flag =  CALIB_FIX_INTRINSIC;
+//                      CALIB_FIX_ASPECT_RATIO |
+//                      CALIB_ZERO_TANGENT_DIST |
+//                      CALIB_USE_INTRINSIC_GUESS |
+//                      CALIB_SAME_FOCAL_LENGTH |
+//                      CALIB_RATIONAL_MODEL |
+//                      CALIB_FIX_K3 | 
+//                      CALIB_FIX_K4 | 
+//                      CALIB_FIX_K5;
+    double rms = stereoCalibrate( objectPoints, 
+                                  imagePoints[0], imagePoints[1],   // allcharucoCornersL, allcharucoCornersR,
+                                  cameraMatrixL, distCoeffsL,
+                                  cameraMatrixR, distCoeffsR,
+                                  Size(FRAME_WIDTH, FRAME_HEIGHT), 
+                                  R, T, E, F,
+                                  Stereo_flag );
+    cout << "done with RMS error=" << rms << endl;
+    fs << "R" << R;
+    fs << "T" << T;
+    fs << "E" << E;
+    fs << "F" << F;
+    fs << "RMS" << rms;
     
 //    Mat img = imread("ChArUcoBoard.png", IMREAD_COLOR);
 //    resize(img, img, Size(640, 480));
 //    imshow("Output", img);
+    
+    fs.release();
+    cout << " --- Calibration data written into file: ../Stereo_calib_ChArUco.txt" << endl << endl;
     
     //cin.get();
     waitKey(0);

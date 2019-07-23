@@ -24,3 +24,5 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 
 CONFIG      *= link_pkgconfig
 PKGCONFIG   *= opencv4
+
+HEADERS +=
