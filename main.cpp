@@ -17,13 +17,88 @@ using namespace cv;
 #define BOARD_Y 8
 
 // --- GLOBAL VARIABLES -----------------------------------------------------// 
+Size imageSize = Size(FRAME_WIDTH, FRAME_HEIGHT);
+
+    // ChArUco board variables
+Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::PREDEFINED_DICTIONARY_NAME(10));  // DICT_6X6_250 = 10
+    // create charuco board object
+Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 10, 7, dictionary);
+
+TermCriteria termcritSub( TermCriteria::EPS | TermCriteria::MAX_ITER, 100, 0.0001 );
 
 // --- FUNCTION -------------------------------------------------------------//
-
+void read_chessboards( vector < Mat > * img, 
+                       vector < vector< vector< Point2f > > > * allCorners, 
+                       vector < vector< int > > * allIds, 
+                       vector < Mat > * allCharucoCorners, 
+                       vector < Mat > * allCharucoIds, 
+                       vector < unsigned int > * nGoodboardi)
+{
+    for (unsigned int i = 0; i < img->size(); i++)                        // Цикл для определенного числа калибровочных кадров
+    {
+        Mat imgi = img->at(i);
+        Mat imgGray;
+        cvtColor( imgi, imgGray, COLOR_BGR2GRAY );
+        nGoodboardi->push_back(i);
+        imshow("calibration", imgi);
+        
+        
+        /*vector< vector< Point2f > > corners;
+        vector< int > ids;
+        
+            // Detect markers
+        aruco::detectMarkers( imgGray, 
+                              dictionary, 
+                              corners, 
+                              ids, 
+                              aruco::DetectorParameters::create());
+        
+        if ( ids.size() == BOARD_X * BOARD_Y / 2 )                          // Проверка удачно найденых углов == 44
+        {
+                // SUB PIXEL DETECTION
+            for (size_t j = 0; j < corners.size(); j++)
+            {
+                cornerSubPix( imgGray, 
+                              corners[j], 
+                              Size(20, 20), 
+                              Size(-1, -1), 
+                              termcritSub);
+            }
+                // Interpolate charuco corners
+            Mat charucoCorners, charucoIds;
+            aruco::interpolateCornersCharuco( corners, 
+                                              ids, 
+                                              imgGray, 
+                                              charucoboard, 
+                                              charucoCorners,
+                                              charucoIds);
+            allCorners->push_back(corners);
+            allIds->push_back(ids);
+            allCharucoCorners->push_back(charucoCorners);
+            allCharucoIds->push_back(charucoIds);
+            
+            
+                // Draw results
+            aruco::drawDetectedMarkers( imgi, corners );
+            aruco::drawDetectedCornersCharuco( imgi, 
+                                               charucoCorners, 
+                                               charucoIds);
+            putText( imgi, "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
+            imshow("calibration", imgi);
+            
+            
+            nGoodboardi->push_back(i);
+        }*/
+    } 
+}
 
 // --- MAIN -----------------------------------------------------------------//
-int main()  //int argc, char *argv[]
+int main(int argc, char *argv[])  //int argc, char *argv[]
 {
+//    string path = argv[0];
+//    cout << path << endl;
+//    cout << argc << endl;
+    
 //    Mat img = imread("ChArUcoBoard.png", IMREAD_COLOR);
 //    resize(img, img, Size(640, 480));
 //    imshow("Output", img);
@@ -33,7 +108,17 @@ int main()  //int argc, char *argv[]
     Size imageSize = Size(FRAME_WIDTH, FRAME_HEIGHT);
     
 // --- STEP 1 --- Load left and right frames --------------------------------//
+        // MENU
     string pos_dir = "/home/roman/imagesStereo";
+    cout << "Input name_dir fo calib image: ";
+    cin >> pos_dir;
+    if (pos_dir == "0") pos_dir = "/home/roman/imagesStereo";
+    size_t kn = 10;
+    cout << "which file to use: ";
+    cin >> kn;
+    if (kn <= 0) kn = 10;
+    cout << "Start stereo calibration" << endl;
+    
     string img_name_L = "/FLZcmCameraBaslerJpegFrame*.png";
     string img_name_R = "/FRZcmCameraBaslerJpegFrame*.png";
     string files_name_L = pos_dir + img_name_L;
@@ -65,7 +150,7 @@ int main()  //int argc, char *argv[]
     Rect myROI(0, 0, FRAME_HEIGHT, FRAME_WIDTH);            // 2048 x 2448
     
     unsigned int nFrames = 0;
-    for ( size_t i = 0; i < files_set_LR.size(); i += 2 )      // 1/12 files
+    for ( size_t i = 0; i < files_set_LR.size(); i += kn )      // 1/12 files
     {
         Mat imgL = imread( pos_dir + "/FL" + files_set_LR[i] ); // load the image
         Mat imgR = imread( pos_dir + "/FR" + files_set_LR[i] );
@@ -87,12 +172,26 @@ int main()  //int argc, char *argv[]
     Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 10, 7, dictionary);
     
         // Collect data from each frame
-    vector < vector< vector< Point2f > > > allCornersL, allCornersR;
-    vector < vector< int > > allIdsL, allIdsR;
-    //vector< Mat > allImgsL, allImgsR;
-    vector < Mat > allCharucoCornersL, allCharucoCornersR; 
-    vector < Mat > allCharucoIdsL, allCharucoIdsR;
+    vector < vector< vector< Point2f > > > allCornersL, allCornersR, allCornersLR;
+    vector < vector< int > > allIdsL, allIdsR, allIdsLR;
+    vector < Mat > allCharucoCornersL, allCharucoCornersR, allCharucoCornersLR; 
+    vector < Mat > allCharucoIdsL, allCharucoIdsR, allCharucoIdsLR;
     
+    /*namedWindow("calibration", WINDOW_AUTOSIZE);
+    vector < unsigned int > nGoodboardL, nGoodboardR;
+    read_chessboards( & ImagesL, 
+                      & allCornersLR, 
+                      & allIdsLR, 
+                      & allCharucoCornersLR, 
+                      & allCharucoIdsLR, 
+                      & nGoodboardL );*/
+//    cout << "Элементы множества: ";
+//    copy( nGoodboardL.begin(), nGoodboardL.end(), ostream_iterator<int>(cout, " "));
+    
+//    allCornersL.clear();
+//    allIdsL.clear();
+//    allCharucoCornersL.clear();
+//    allCharucoIdsL.clear();
     vector < unsigned int > nGoodboard;
     for (unsigned int i = 0; i < nFrames; i++)                        // Цикл для определенного числа калибровочных кадров
     {
@@ -188,6 +287,7 @@ int main()  //int argc, char *argv[]
     }
     cout << "nGoodboard = " << nGoodboard.size() << endl;
     
+    
     /*for(unsigned int i = 0; i < nGoodboard; i++) 
     {
             // interpolate using camera parameters
@@ -229,7 +329,7 @@ int main()  //int argc, char *argv[]
                             tvecsL,
                             calibrationFlags);
     FileStorage fs;
-    fs.open("../Stereo_calib_ChArUco.txt", FileStorage::WRITE);    // Write in file data calibration
+    fs.open("Stereo_calib_ChArUco.txt", FileStorage::WRITE);    // Write in file data calibration
     fs << "intrinsicL" << cameraMatrixL;
     fs << "distCoeffsL" << distCoeffsL;
     //fs << "rvecsL" << rvecsL;
@@ -316,7 +416,7 @@ int main()  //int argc, char *argv[]
                              distCoeffsR, 
                              R2, P2, 
                              imageSize, 
-                             CV_16SC2, 
+                             CV_32FC1,      // CV_16SC2
                              rmap[1][0], rmap[1][1] );
     
     
@@ -356,7 +456,7 @@ int main()  //int argc, char *argv[]
     }
     
     fs.release();
-    cout << " --- Calibration data written into file: ../Stereo_calib_ChArUco.txt" << endl << endl;
+    cout << " --- Calibration data written into file: Stereo_calib_ChArUco.txt" << endl << endl;
     
     //cin.get();
     waitKey(0);
