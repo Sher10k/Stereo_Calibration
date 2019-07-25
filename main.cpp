@@ -42,7 +42,7 @@ static int Stereo_flag =  CALIB_FIX_INTRINSIC;
 //                          CALIB_FIX_K5;
 
 // --- FUNCTION -------------------------------------------------------------//
-void read_file_image( vector < Mat > * img )
+void read_file_image( vector < string > * imgPath )
 {
         // MENU
     cout << "Input name_dir fo calib image: ";
@@ -58,20 +58,20 @@ void read_file_image( vector < Mat > * img )
     string img_name_R = "/FRZcmCameraBaslerJpegFrame*.png";
     string files_name_L = pos_dir + img_name_L;
     string files_name_R = pos_dir + img_name_R;
-    vector< String > files_L, files_R;
+    vector < String > files_L, files_R;
     glob( files_name_L, files_L );
     glob( files_name_R, files_R );
     
-    set< string > files_set_L, files_set_R;
-    vector< string > files_set_LR;
-    for (size_t i = 0; i < files_L.size(); i++) 
+    set < string > files_set_L, files_set_R;
+    vector < string > files_set_LR;
+    for ( size_t i = 0; i < files_L.size(); i++ ) 
     {
         string temp = files_L[i];
         files_L[i].erase(0, pos_dir.length() + 3);
         files_set_L.insert(files_L[i]);
         files_L[i] = temp;
     }
-    for (size_t i = 0; i < files_R.size(); i++) 
+    for ( size_t i = 0; i < files_R.size(); i++ ) 
     {
         string temp = files_R[i];
         files_R[i].erase(0, pos_dir.length() + 3);
@@ -87,25 +87,28 @@ void read_file_image( vector < Mat > * img )
         Rect myROI(0, 0, FRAME_HEIGHT, FRAME_WIDTH);            // 2048 x 2448
         Mat imgL = imread( pos_dir + "/FL" + files_set_LR[i] ); // load the image
         Mat imgR = imread( pos_dir + "/FR" + files_set_LR[i] );
+        imgPath[0].push_back( pos_dir + "/FL" + files_set_LR[i] );
+        imgPath[1].push_back( pos_dir + "/FR" + files_set_LR[i] );
         imgL(Rect(0, 0, 2448, 2048)).copyTo(imgL);
         imgR(Rect(0, 0, 2448, 2048)).copyTo(imgR);
         rotate(imgL, imgL, ROTATE_180);
         rotate(imgR, imgR, ROTATE_180);
-        img[0].push_back( imgL );
-        img[1].push_back( imgR );
     }
 }
 
-void read_chessboards( vector < Mat > * img, 
+void read_chessboards( vector < string > * imgPath,
                        vector < vector< vector< Point2f > > > * allCorners, 
                        vector < vector< int > > * allIds, 
                        vector < Mat > * allCharucoCorners, 
                        vector < Mat > * allCharucoIds, 
                        set < unsigned int > * nGoodboard )
 {
-    for (unsigned int i = 0; i < img->size(); i++)                        // Цикл для определенного числа калибровочных кадров
+    for (unsigned int i = 0; i < imgPath->size(); i++)                        // Цикл для определенного числа калибровочных кадров img->size()
     {
-        Mat imgi = img->at(i);
+        //Mat imgi = img->at(i);
+        Mat imgi = imread( imgPath->at(i) );
+        imgi(Rect(0, 0, 2448, 2048)).copyTo(imgi);
+        rotate(imgi, imgi, ROTATE_180);
         Mat imgGray;
         cvtColor( imgi, imgGray, COLOR_BGR2GRAY );
         
@@ -150,21 +153,25 @@ void read_chessboards( vector < Mat > * img,
 }
 
 void output_stereo_img( Mat * img,
-                        vector < vector < Point2f > > * allCorners, 
-                        Mat * allCharucoCorners,
-                        Mat * allCharucoIds,
+                        string * imgPath,
+                        vector < vector < Point2f > > * Corners, 
+                        Mat * CharucoCorners,
+                        Mat * CharucoIds,
                         Matx33d * cameraMatrix, 
                         Matx < double, 1, 5 > * distCoeffs,
                         Mat rmapX,
                         Mat rmapY )
 {
+    Mat imgi = imread( *imgPath );
+    imgi(Rect(0, 0, 2448, 2048)).copyTo( *img );
+    rotate(*img, *img, ROTATE_180);
     Mat tempF;
     
     aruco::drawDetectedMarkers( *img, 
-                                *allCorners );
+                                *Corners );
     aruco::drawDetectedCornersCharuco( *img, 
-                                       *allCharucoCorners, 
-                                       *allCharucoIds);
+                                       *CharucoCorners, 
+                                       *CharucoIds);
     undistort( *img, tempF, 
                cameraMatrix[0], 
                distCoeffs[0] );
@@ -180,13 +187,13 @@ int main()  //int argc, char *argv[]
 //    resize(img, img, Size(640, 480));
 //    imshow("Output", img);
     
-// --- MAIN VARIABLES -------------------------------------------------------//
-    vector < Mat > Images[2];                                               // FILES IMAGE
+// --- MAIN VARIABLES -------------------------------------------------------// 
+    vector < string > imgPath[2];                                           // FILES IMAGE
     FileStorage fs;
     fs.open("Stereo_calib_ChArUco.txt", FileStorage::WRITE);    // Write in file data calibration
 
 // --- STEP 1 --- Load left and right frames --------------------------------//
-    read_file_image( & Images[0] );
+    read_file_image( & imgPath[0]);
     
 // --- STEP 2 --- Calibration left and right camera -----------------------------------//
     Mat frame[2];
@@ -198,13 +205,13 @@ int main()  //int argc, char *argv[]
     vector < Mat > allCharucoIds[2];
     
     set < unsigned int > nGoodboard[2];
-    read_chessboards( & Images[0], 
+    read_chessboards( & imgPath[0],
                       & allCorners[0], 
                       & allIds[0], 
                       & allCharucoCorners[0], 
                       & allCharucoIds[0], 
                       & nGoodboard[0] );
-    read_chessboards( & Images[1], 
+    read_chessboards( & imgPath[1],
                       & allCorners[1], 
                       & allIds[1], 
                       & allCharucoCorners[1], 
@@ -375,8 +382,10 @@ int main()  //int argc, char *argv[]
 // --- STEP 6 --- Undistort, Remap ------------------------------------------//
     for (size_t n = 0; n < nGoodboardv.size(); n++)
     {
+        Mat imgL, imgR;
             // Left
-        output_stereo_img( & Images[0][nGoodboardv[n]], 
+        output_stereo_img( & imgL,
+                           & imgPath[0][nGoodboardv[n]],
                            & allCorners[0][n], 
                            & allCharucoCorners[0][n],
                            & allCharucoIds[0][n], 
@@ -386,7 +395,8 @@ int main()  //int argc, char *argv[]
                            rmap[0][1] );
         
             // Right
-        output_stereo_img( & Images[1][nGoodboardv[n]], 
+        output_stereo_img( & imgR, 
+                           & imgPath[1][nGoodboardv[n]],
                            & allCorners[1][n], 
                            & allCharucoCorners[1][n],
                            & allCharucoIds[1][n], 
@@ -398,10 +408,10 @@ int main()  //int argc, char *argv[]
         Mat frameLR = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC3);
         Rect r1(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
         Rect r2(FRAME_WIDTH, 0, FRAME_WIDTH, FRAME_HEIGHT);
-        putText( Images[0][nGoodboardv[n]], "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
-        putText( Images[1][nGoodboardv[n]], "R", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
-        Images[0][nGoodboardv[n]].copyTo(frameLR( r1 ));
-        Images[1][nGoodboardv[n]].copyTo(frameLR( r2 ));
+        putText( imgL, "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
+        putText( imgR, "R", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
+        imgL.copyTo(frameLR( r1 ));
+        imgR.copyTo(frameLR( r2 ));
         for( int i = 0; i < frameLR.rows; i += 100 )
             for( int j = 0; j < frameLR.cols; j++ )
                 frameLR.at< Vec3b >(i, j)[2] = 255;
