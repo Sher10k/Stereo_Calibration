@@ -17,33 +17,99 @@ using namespace cv;
 #define BOARD_Y 8
 
 // --- GLOBAL VARIABLES -----------------------------------------------------// 
-Size imageSize = Size(FRAME_WIDTH, FRAME_HEIGHT);
+static string pos_dir = "/home/roman/imagesStereo";
+static Size imageSize = Size(FRAME_WIDTH, FRAME_HEIGHT);
 
     // ChArUco board variables
-Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::PREDEFINED_DICTIONARY_NAME(10));  // DICT_6X6_250 = 10
+static Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::PREDEFINED_DICTIONARY_NAME(10));  // DICT_6X6_250 = 10
     // create charuco board object
-Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 10, 7, dictionary);
+static Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 10, 7, dictionary);
 
-TermCriteria termcritSub( TermCriteria::EPS | TermCriteria::MAX_ITER, 100, 0.0001 );
+static TermCriteria termcritSub( TermCriteria::EPS | TermCriteria::MAX_ITER, 100, 0.0001 );
+
+static int Calibration_flags = CALIB_FIX_K1 | 
+                              CALIB_FIX_K2 | 
+                              CALIB_FIX_K3;      // Calibration flags    | CALIB_FIX_K6
+
+static int Stereo_flag =  CALIB_FIX_INTRINSIC;
+//                          CALIB_FIX_ASPECT_RATIO |
+//                          CALIB_ZERO_TANGENT_DIST |
+//                          CALIB_USE_INTRINSIC_GUESS |
+//                          CALIB_SAME_FOCAL_LENGTH |
+//                          CALIB_RATIONAL_MODEL |
+//                          CALIB_FIX_K3 | 
+//                          CALIB_FIX_K4 | 
+//                          CALIB_FIX_K5;
 
 // --- FUNCTION -------------------------------------------------------------//
+void read_file_image( vector < Mat > * img )
+{
+        // MENU
+    cout << "Input name_dir fo calib image: ";
+    cin >> pos_dir;
+    if (pos_dir == "0") pos_dir = "/home/roman/imagesStereo";
+    size_t kn = 10;
+    cout << "Which file to use: ";
+    cin >> kn;
+    if (kn <= 0) kn = 10;
+    cout << "Start stereo calibration" << endl;
+    
+    string img_name_L = "/FLZcmCameraBaslerJpegFrame*.png";
+    string img_name_R = "/FRZcmCameraBaslerJpegFrame*.png";
+    string files_name_L = pos_dir + img_name_L;
+    string files_name_R = pos_dir + img_name_R;
+    vector< String > files_L, files_R;
+    glob( files_name_L, files_L );
+    glob( files_name_R, files_R );
+    
+    set< string > files_set_L, files_set_R;
+    vector< string > files_set_LR;
+    for (size_t i = 0; i < files_L.size(); i++) 
+    {
+        string temp = files_L[i];
+        files_L[i].erase(0, pos_dir.length() + 3);
+        files_set_L.insert(files_L[i]);
+        files_L[i] = temp;
+    }
+    for (size_t i = 0; i < files_R.size(); i++) 
+    {
+        string temp = files_R[i];
+        files_R[i].erase(0, pos_dir.length() + 3);
+        files_set_R.insert(files_R[i]);
+        files_R[i] = temp;
+    }
+    set_intersection( files_set_L.begin(), files_set_L.end(), 
+                      files_set_R.begin(), files_set_R.end(), 
+                      back_inserter(files_set_LR));          // inserter(files_set_LR, files_set_LR.begin())
+    
+    for ( size_t i = 0; i < files_set_LR.size(); i += kn )      // 1/12 files
+    {
+        Rect myROI(0, 0, FRAME_HEIGHT, FRAME_WIDTH);            // 2048 x 2448
+        Mat imgL = imread( pos_dir + "/FL" + files_set_LR[i] ); // load the image
+        Mat imgR = imread( pos_dir + "/FR" + files_set_LR[i] );
+        imgL(Rect(0, 0, 2448, 2048)).copyTo(imgL);
+        imgR(Rect(0, 0, 2448, 2048)).copyTo(imgR);
+        rotate(imgL, imgL, ROTATE_180);
+        rotate(imgR, imgR, ROTATE_180);
+        img[0].push_back( imgL );
+        img[1].push_back( imgR );
+    }
+}
+
 void read_chessboards( vector < Mat > * img, 
                        vector < vector< vector< Point2f > > > * allCorners, 
                        vector < vector< int > > * allIds, 
                        vector < Mat > * allCharucoCorners, 
                        vector < Mat > * allCharucoIds, 
-                       vector < unsigned int > * nGoodboardi)
+                       set < unsigned int > * nGoodboard )
 {
     for (unsigned int i = 0; i < img->size(); i++)                        // Цикл для определенного числа калибровочных кадров
     {
         Mat imgi = img->at(i);
         Mat imgGray;
         cvtColor( imgi, imgGray, COLOR_BGR2GRAY );
-        nGoodboardi->push_back(i);
-        imshow("calibration", imgi);
         
-        
-        /*vector< vector< Point2f > > corners;
+        vector< vector< Point2f > > corners;
         vector< int > ids;
         
             // Detect markers
@@ -77,302 +143,190 @@ void read_chessboards( vector < Mat > * img,
             allCharucoCorners->push_back(charucoCorners);
             allCharucoIds->push_back(charucoIds);
             
-            
-                // Draw results
-            aruco::drawDetectedMarkers( imgi, corners );
-            aruco::drawDetectedCornersCharuco( imgi, 
-                                               charucoCorners, 
-                                               charucoIds);
-            putText( imgi, "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
-            imshow("calibration", imgi);
-            
-            
-            nGoodboardi->push_back(i);
-        }*/
+            //nGoodboard->push_back(i);
+            nGoodboard->insert(i);
+        }
     } 
 }
 
-// --- MAIN -----------------------------------------------------------------//
-int main(int argc, char *argv[])  //int argc, char *argv[]
+void output_stereo_img( Mat * img,
+                        vector < vector < Point2f > > * allCorners, 
+                        Mat * allCharucoCorners,
+                        Mat * allCharucoIds,
+                        Matx33d * cameraMatrix, 
+                        Matx < double, 1, 5 > * distCoeffs,
+                        Mat rmapX,
+                        Mat rmapY )
 {
-//    string path = argv[0];
-//    cout << path << endl;
-//    cout << argc << endl;
+    Mat tempF;
     
+    aruco::drawDetectedMarkers( *img, 
+                                *allCorners );
+    aruco::drawDetectedCornersCharuco( *img, 
+                                       *allCharucoCorners, 
+                                       *allCharucoIds);
+    undistort( *img, tempF, 
+               cameraMatrix[0], 
+               distCoeffs[0] );
+    remap( tempF, *img, 
+           rmapX, rmapY, 
+           INTER_LINEAR );
+}
+
+// --- MAIN -----------------------------------------------------------------//
+int main()  //int argc, char *argv[]
+{
 //    Mat img = imread("ChArUcoBoard.png", IMREAD_COLOR);
 //    resize(img, img, Size(640, 480));
 //    imshow("Output", img);
     
 // --- MAIN VARIABLES -------------------------------------------------------//
-    vector < Mat > ImagesL, ImagesR;                         // FILES IMAGE    
-    Size imageSize = Size(FRAME_WIDTH, FRAME_HEIGHT);
-    
-// --- STEP 1 --- Load left and right frames --------------------------------//
-        // MENU
-    string pos_dir = "/home/roman/imagesStereo";
-    cout << "Input name_dir fo calib image: ";
-    cin >> pos_dir;
-    if (pos_dir == "0") pos_dir = "/home/roman/imagesStereo";
-    size_t kn = 10;
-    cout << "which file to use: ";
-    cin >> kn;
-    if (kn <= 0) kn = 10;
-    cout << "Start stereo calibration" << endl;
-    
-    string img_name_L = "/FLZcmCameraBaslerJpegFrame*.png";
-    string img_name_R = "/FRZcmCameraBaslerJpegFrame*.png";
-    string files_name_L = pos_dir + img_name_L;
-    string files_name_R = pos_dir + img_name_R;
-    vector< String > files_L, files_R;
-    glob( files_name_L, files_L );
-    glob( files_name_R, files_R );
-    
-    set< string > files_set_L, files_set_R;
-    vector< string > files_set_LR;
-    for (size_t i = 0; i < files_L.size(); i++) 
-    {
-        string temp = files_L[i];
-        files_L[i].erase(0, pos_dir.length() + 3);
-        files_set_L.insert(files_L[i]);
-        files_L[i] = temp;
-    }
-    for (size_t i = 0; i < files_R.size(); i++) 
-    {
-        string temp = files_R[i];
-        files_R[i].erase(0, pos_dir.length() + 3);
-        files_set_R.insert(files_R[i]);
-        files_R[i] = temp;
-    }
-    set_intersection( files_set_L.begin(), files_set_L.end(), 
-                      files_set_R.begin(), files_set_R.end(), 
-                      back_inserter(files_set_LR));          // inserter(files_set_LR, files_set_LR.begin())
-    
-    Rect myROI(0, 0, FRAME_HEIGHT, FRAME_WIDTH);            // 2048 x 2448
-    
-    unsigned int nFrames = 0;
-    for ( size_t i = 0; i < files_set_LR.size(); i += kn )      // 1/12 files
-    {
-        Mat imgL = imread( pos_dir + "/FL" + files_set_LR[i] ); // load the image
-        Mat imgR = imread( pos_dir + "/FR" + files_set_LR[i] );
-        imgL(Rect(0, 0, 2448, 2048)).copyTo(imgL);
-        imgR(Rect(0, 0, 2448, 2048)).copyTo(imgR);
-        ImagesL.push_back( imgL );
-        ImagesR.push_back( imgR );
-        nFrames++;
-    }
-    
-    
-// --- STEP 2 --- Calibration left and right camera -----------------------------------//
-    Mat frameL, frameR, frameLR;
-    TermCriteria termcritSub( TermCriteria::EPS | TermCriteria::MAX_ITER, 100, 0.0001 );
-    
-        // ChArUco board variables
-    Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::PREDEFINED_DICTIONARY_NAME(10));  // DICT_6X6_250 = 10
-        // create charuco board object
-    Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 10, 7, dictionary);
-    
-        // Collect data from each frame
-    vector < vector< vector< Point2f > > > allCornersL, allCornersR, allCornersLR;
-    vector < vector< int > > allIdsL, allIdsR, allIdsLR;
-    vector < Mat > allCharucoCornersL, allCharucoCornersR, allCharucoCornersLR; 
-    vector < Mat > allCharucoIdsL, allCharucoIdsR, allCharucoIdsLR;
-    
-    /*namedWindow("calibration", WINDOW_AUTOSIZE);
-    vector < unsigned int > nGoodboardL, nGoodboardR;
-    read_chessboards( & ImagesL, 
-                      & allCornersLR, 
-                      & allIdsLR, 
-                      & allCharucoCornersLR, 
-                      & allCharucoIdsLR, 
-                      & nGoodboardL );*/
-//    cout << "Элементы множества: ";
-//    copy( nGoodboardL.begin(), nGoodboardL.end(), ostream_iterator<int>(cout, " "));
-    
-//    allCornersL.clear();
-//    allIdsL.clear();
-//    allCharucoCornersL.clear();
-//    allCharucoIdsL.clear();
-    vector < unsigned int > nGoodboard;
-    for (unsigned int i = 0; i < nFrames; i++)                        // Цикл для определенного числа калибровочных кадров
-    {
-        Mat imgGrayL, imgGrayR;
-        cvtColor(ImagesL[i], imgGrayL, COLOR_BGR2GRAY);
-        cvtColor(ImagesR[i], imgGrayR, COLOR_BGR2GRAY);
-        vector< int > idsL, idsR;
-        vector< vector< Point2f > > cornersL, cornersR;    
-        
-            // detect markers
-        aruco::detectMarkers( imgGrayL, 
-                              dictionary, 
-                              cornersL, 
-                              idsL, 
-                              aruco::DetectorParameters::create());
-        aruco::detectMarkers( imgGrayR, 
-                              dictionary, 
-                              cornersR, 
-                              idsR, 
-                              aruco::DetectorParameters::create());
-        
-        if ( (idsL.size() == BOARD_X * BOARD_Y / 2) && (idsR.size() == BOARD_X * BOARD_Y / 2) )    // Проверка удачно найденых углов == 44
-        {
-                // SUB PIXEL DETECTION
-            for (size_t j = 0; j < cornersL.size(); j++)
-            {
-                cornerSubPix( imgGrayL, 
-                              cornersL[j], 
-                              Size(20, 20), 
-                              Size(-1, -1), 
-                              termcritSub);
-            }
-            for (size_t j = 0; j < cornersR.size(); j++)
-            {
-                cornerSubPix( imgGrayR, 
-                              cornersR[j], 
-                              Size(20, 20), 
-                              Size(-1, -1), 
-                              termcritSub);
-            }
-            
-                // Interpolate charuco corners
-            Mat charucoCornersL, charucoCornersR;
-            Mat charucoIdsL, charucoIdsR;
-            aruco::interpolateCornersCharuco( cornersL, 
-                                              idsL, 
-                                              imgGrayL, 
-                                              charucoboard, 
-                                              charucoCornersL,
-                                              charucoIdsL);
-            aruco::interpolateCornersCharuco( cornersR, 
-                                              idsR, 
-                                              imgGrayR, 
-                                              charucoboard, 
-                                              charucoCornersR,
-                                              charucoIdsR);
-            allCornersL.push_back(cornersL);
-            allIdsL.push_back(idsL);
-            //allImgsL.push_back(ImagesL[i]);
-            allCharucoCornersL.push_back(charucoCornersL);
-            allCharucoIdsL.push_back(charucoIdsL);
-            
-            allCornersR.push_back(cornersR);
-            allIdsR.push_back(idsR);
-            //allImgsR.push_back(ImagesR[i]);
-            allCharucoCornersR.push_back(charucoCornersR);
-            allCharucoIdsR.push_back(charucoIdsR);
-            
-                // Draw results
-            /*aruco::drawDetectedMarkers( imgGrayL, cornersL ); // ImagesL[i]
-            aruco::drawDetectedMarkers( imgGrayR, cornersR ); // ImagesR[i]
-            if(charucoCornersL.rows > 0) aruco::drawDetectedCornersCharuco( imgGrayL, 
-                                                                            charucoCornersL, 
-                                                                            charucoIdsL);
-            if(charucoCornersR.rows > 0) aruco::drawDetectedCornersCharuco( imgGrayR, 
-                                                                            charucoCornersR, 
-                                                                            charucoIdsR);
-            
-            putText( imgGrayL, "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);   // frameL
-            putText( imgGrayR, "R", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);   // frameR
-            
-            frameLR = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC1);
-            Rect r1(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
-            Rect r2(FRAME_WIDTH, 0, FRAME_WIDTH, FRAME_HEIGHT);
-            imgGrayL.copyTo(frameLR( r1 ));
-            imgGrayR.copyTo(frameLR( r2 ));
-            //imshow("calibration", frameLR);
-            imwrite( pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(nGoodboard) + ".png", frameLR);
-            cout << pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(nGoodboard) + ".png" << endl;*/
-            
-            nGoodboard.push_back(i);
-        }
-    }
-    cout << "nGoodboard = " << nGoodboard.size() << endl;
-    
-    
-    /*for(unsigned int i = 0; i < nGoodboard; i++) 
-    {
-            // interpolate using camera parameters
-        vector< Point2f > currentCharucoCornersL, currentCharucoCornersR;
-        Mat currentCharucoIdsL, currentCharucoIdsR;
-        aruco::interpolateCornersCharuco( allCornersL[i], 
-                                          allIdsL[i], 
-                                          allImgsL[i], 
-                                          charucoboard,
-                                          currentCharucoCornersL, 
-                                          currentCharucoIdsL);
-        aruco::interpolateCornersCharuco( allCornersR[i], 
-                                          allIdsR[i], 
-                                          allImgsR[i], 
-                                          charucoboard,
-                                          currentCharucoCornersR, 
-                                          currentCharucoIdsR);
-
-        allCharucoCornersL.push_back(currentCharucoCornersL);
-        allCharucoIdsL.push_back(currentCharucoIdsL);
-        allCharucoCornersR.push_back(currentCharucoCornersR);
-        allCharucoIdsR.push_back(currentCharucoIdsR);
-    }*/
-    
-        // Calibration left and right camera
-    Matx33d cameraMatrixL, cameraMatrixR;
-    Matx<double, 1, 5> distCoeffsL, distCoeffsR;
-    vector<Mat> rvecsL, tvecsL, rvecsR, tvecsR;
-    int calibrationFlags = CALIB_FIX_K1 | 
-                           CALIB_FIX_K2 | 
-                           CALIB_FIX_K3;      // Calibration flags    | CALIB_FIX_K6
-    calibrateCameraCharuco( allCharucoCornersL,
-                            allCharucoIdsL, 
-                            charucoboard, 
-                            imageSize,
-                            cameraMatrixL,
-                            distCoeffsL,
-                            rvecsL,
-                            tvecsL,
-                            calibrationFlags);
+    vector < Mat > Images[2];                                               // FILES IMAGE
     FileStorage fs;
     fs.open("Stereo_calib_ChArUco.txt", FileStorage::WRITE);    // Write in file data calibration
-    fs << "intrinsicL" << cameraMatrixL;
-    fs << "distCoeffsL" << distCoeffsL;
-    //fs << "rvecsL" << rvecsL;
-    //fs << "tvecsL" << tvecsL;
-    calibrateCameraCharuco( allCharucoCornersR,
-                            allCharucoIdsR, 
+
+// --- STEP 1 --- Load left and right frames --------------------------------//
+    read_file_image( & Images[0] );
+    
+// --- STEP 2 --- Calibration left and right camera -----------------------------------//
+    Mat frame[2];
+    
+        // Collect data from each frame
+    vector < vector< vector< Point2f > > > allCorners[2];
+    vector < vector< int > > allIds[2];
+    vector < Mat > allCharucoCorners[2];
+    vector < Mat > allCharucoIds[2];
+    
+    set < unsigned int > nGoodboard[2];
+    read_chessboards( & Images[0], 
+                      & allCorners[0], 
+                      & allIds[0], 
+                      & allCharucoCorners[0], 
+                      & allCharucoIds[0], 
+                      & nGoodboard[0] );
+    read_chessboards( & Images[1], 
+                      & allCorners[1], 
+                      & allIds[1], 
+                      & allCharucoCorners[1], 
+                      & allCharucoIds[1], 
+                      & nGoodboard[1] );
+    cout << "Элементы множества nGoodboard[0]: ";
+    copy( nGoodboard[0].begin(), nGoodboard[0].end(), ostream_iterator<int>(cout, " "));
+    cout << endl;
+    cout << "Элементы множества nGoodboard[1]: ";
+    copy( nGoodboard[1].begin(), nGoodboard[1].end(), ostream_iterator<int>(cout, " "));
+    cout << endl;
+    vector < unsigned int > nGoodboardv;
+    set_intersection( nGoodboard[0].begin(), nGoodboard[0].end(), 
+                      nGoodboard[1].begin(), nGoodboard[1].end(), 
+                      back_inserter(nGoodboardv));
+    cout << "Соответствующие пары nGoodboardv: ";
+    for (size_t i = 0; i < nGoodboardv.size(); i++) cout << nGoodboardv[i] << " ";
+    cout << endl << "nGoodboardv = " << nGoodboardv.size() << endl;
+    
+        // Sorting the relevant elements
+    vector < unsigned int > nGL(nGoodboard[0].size());
+    copy( nGoodboard[0].begin(), nGoodboard[0].end(), nGL.begin() );
+    vector < unsigned int > nGR(nGoodboard[1].size());
+    copy( nGoodboard[1].begin(), nGoodboard[1].end(), nGR.begin() );
+    for ( unsigned int i = 0, j = 0, k = 0; k < nGoodboardv.size() ; )
+    {
+        if ( nGL.at(i) == nGR.at(j) )
+        {
+            k++;
+            i++;
+            j++;
+        }
+        else if ( nGL.at(i) != nGoodboardv.at(k))
+        {
+            nGL.erase(nGL.begin() + i);
+            allCorners[0].erase(allCorners[0].begin() + i);
+            allIds[0].erase(allIds[0].begin() + i);
+            allCharucoCorners[0].erase(allCharucoCorners[0].begin() + i);
+            allCharucoIds[0].erase(allCharucoIds[0].begin() + i);
+        }
+        else if ( nGR.at(j) != nGoodboardv.at(k))
+        {
+            nGR.erase(nGR.begin() + j);
+            allCorners[1].erase(allCorners[1].begin() + j);
+            allIds[1].erase(allIds[1].begin() + j);
+            allCharucoCorners[1].erase(allCharucoCorners[1].begin() + j);
+            allCharucoIds[1].erase(allCharucoIds[1].begin() + j);
+        }
+        else
+        {
+            nGL.erase(nGL.begin() + i);
+            allCorners[0].erase(allCorners[0].begin() + i);
+            allIds[0].erase(allIds[0].begin() + i);
+            allCharucoCorners[0].erase(allCharucoCorners[0].begin() + i);
+            allCharucoIds[0].erase(allCharucoIds[0].begin() + i);
+            
+            nGR.erase(nGR.begin() + j);
+            allCorners[1].erase(allCorners[1].begin() + j);
+            allIds[1].erase(allIds[1].begin() + j);
+            allCharucoCorners[1].erase(allCharucoCorners[1].begin() + j);
+            allCharucoIds[1].erase(allCharucoIds[1].begin() + j);
+        }
+    }
+    nGL.resize(nGoodboardv.size());
+    nGR.resize(nGoodboardv.size());
+    for (unsigned int n = 0; n <2; n++)
+    {
+        allCorners[n].resize(nGoodboardv.size());
+        allIds[n].resize(nGoodboardv.size());
+        allCharucoCorners[n].resize(nGoodboardv.size());
+        allCharucoIds[n].resize(nGoodboardv.size());
+    }
+    
+        // Calibration left and right camera
+    Matx33d cameraMatrix[2];
+    Matx<double, 1, 5> distCoeffs[2];
+    vector<Mat> rvecs[2], tvecs[2];
+    
+    calibrateCameraCharuco( allCharucoCorners[0],
+                            allCharucoIds[0], 
                             charucoboard, 
                             imageSize,
-                            cameraMatrixR,
-                            distCoeffsR,
-                            rvecsR,
-                            tvecsR,
-                            calibrationFlags);
-    fs << "intrinsicR" << cameraMatrixR;
-    fs << "distCoeffsR" << distCoeffsR;
-    //fs << "rvecsR" << rvecsR;
-    //fs << "tvecsR" << tvecsR;
+                            cameraMatrix[0],
+                            distCoeffs[0],
+                            rvecs[0],
+                            tvecs[0],
+                            Calibration_flags);
+    calibrateCameraCharuco( allCharucoCorners[1],
+                            allCharucoIds[1], 
+                            charucoboard, 
+                            imageSize,
+                            cameraMatrix[1],
+                            distCoeffs[1],
+                            rvecs[1],
+                            tvecs[1],
+                            Calibration_flags);
     
+    fs << "intrinsicL" << cameraMatrix[0];
+    fs << "distCoeffsL" << distCoeffs[0];
+    //fs << "rvecsL" << rvecs[0];
+    //fs << "tvecsL" << tvecs[0];
+    fs << "intrinsicR" << cameraMatrix[1];
+    fs << "distCoeffsR" << distCoeffs[1];
+    //fs << "rvecsR" << rvecs[1];
+    //fs << "tvecsR" << tvecs[1];    
     
 // --- STEP 3 --- Stereo calibration ----------------------------------------//
     vector < vector < Point3f > > objectPoints;
-    objectPoints.resize(nGoodboard.size());
+    objectPoints.resize(nGoodboardv.size());
     int squareSize = 1;
-    for(unsigned int i = 0; i < nGoodboard.size(); i++ )
+    for(unsigned int i = 0; i < nGoodboardv.size(); i++ )
     {
         for( int j = 0; j < BOARD_X - 1; j++ )
             for( int k = 0; k < BOARD_Y - 1; k++ )
                 objectPoints[i].push_back( Point3f( k * squareSize, j * squareSize, 0 ) );
     }
     Mat R, T, E, F;
-    int Stereo_flag =  CALIB_FIX_INTRINSIC;
-//                      CALIB_FIX_ASPECT_RATIO |
-//                      CALIB_ZERO_TANGENT_DIST |
-//                      CALIB_USE_INTRINSIC_GUESS |
-//                      CALIB_SAME_FOCAL_LENGTH |
-//                      CALIB_RATIONAL_MODEL |
-//                      CALIB_FIX_K3 | 
-//                      CALIB_FIX_K4 | 
-//                      CALIB_FIX_K5;
+
     double rms = stereoCalibrate( objectPoints, 
-                                  allCharucoCornersL, allCharucoCornersR, 
-                                  cameraMatrixL, distCoeffsL,
-                                  cameraMatrixR, distCoeffsR,
+                                  allCharucoCorners[0], allCharucoCorners[1], 
+                                  cameraMatrix[0], distCoeffs[0],
+                                  cameraMatrix[1], distCoeffs[1],
                                   imageSize, 
                                   R, T, E, F,
                                   Stereo_flag );
@@ -383,14 +337,13 @@ int main(int argc, char *argv[])  //int argc, char *argv[]
     fs << "F" << F;
     fs << "RMS" << rms;
     
-    
 // --- STEP 4 --- Stereo rectify --------------------------------------------//
     Mat R1, R2, P1, P2, Q;
     Rect validRoi[2];
-    stereoRectify( cameraMatrixL, 
-                   distCoeffsL, 
-                   cameraMatrixR, 
-                   distCoeffsR, 
+    stereoRectify( cameraMatrix[0], 
+                   distCoeffs[0], 
+                   cameraMatrix[1], 
+                   distCoeffs[1], 
                    imageSize, 
                    R, T, R1,R2, P1, P2, Q, 
                    CALIB_ZERO_DISPARITY, 
@@ -406,47 +359,49 @@ int main(int argc, char *argv[])  //int argc, char *argv[]
     
 // --- STEP 5 --- Undistort Rectify Map -------------------------------------//
     Mat rmap[2][2];
-    initUndistortRectifyMap( cameraMatrixL, 
-                             distCoeffsL, 
+    initUndistortRectifyMap( cameraMatrix[0], 
+                             distCoeffs[0], 
                              R1, P1, 
                              imageSize, 
                              CV_32FC1, 
                              rmap[0][0], rmap[0][1] );
-    initUndistortRectifyMap( cameraMatrixR, 
-                             distCoeffsR, 
+    initUndistortRectifyMap( cameraMatrix[1], 
+                             distCoeffs[1], 
                              R2, P2, 
                              imageSize, 
-                             CV_32FC1,      // CV_16SC2
+                             CV_32FC1,
                              rmap[1][0], rmap[1][1] );
     
-    
 // --- STEP 6 --- Undistort, Remap ------------------------------------------//
-    for (size_t n = 0; n < nGoodboard.size(); n++)
+    for (size_t n = 0; n < nGoodboardv.size(); n++)
     {
-        Mat tempFL, tempFR;
             // Left
-        aruco::drawDetectedMarkers( ImagesL[nGoodboard[n]], allCornersL[n] );
-        aruco::drawDetectedCornersCharuco( ImagesL[nGoodboard[n]], 
-                                           allCharucoCornersL[n], 
-                                           allCharucoIdsL[n]);
-        undistort( ImagesL[nGoodboard[n]], tempFL, cameraMatrixL, distCoeffsL);
-        remap(tempFL, ImagesL[nGoodboard[n]], rmap[0][0], rmap[0][1], INTER_LINEAR);
-        putText( ImagesL[nGoodboard[n]], "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
-            // Right
-        aruco::drawDetectedMarkers( ImagesR[nGoodboard[n]], allCornersR[n] );
-        aruco::drawDetectedCornersCharuco( ImagesR[nGoodboard[n]], 
-                                           allCharucoCornersR[n], 
-                                           allCharucoIdsR[n]);
-        undistort( ImagesR[nGoodboard[n]], tempFR, cameraMatrixR, distCoeffsR);
-        remap(tempFR, ImagesR[nGoodboard[n]], rmap[1][0], rmap[1][1], INTER_LINEAR);
-        putText( ImagesR[nGoodboard[n]], "R", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10); 
-    
+        output_stereo_img( & Images[0][nGoodboardv[n]], 
+                           & allCorners[0][n], 
+                           & allCharucoCorners[0][n],
+                           & allCharucoIds[0][n], 
+                           & cameraMatrix[0], 
+                           & distCoeffs[0], 
+                           rmap[0][0],
+                           rmap[0][1] );
         
-        frameLR = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC3);
+            // Right
+        output_stereo_img( & Images[1][nGoodboardv[n]], 
+                           & allCorners[1][n], 
+                           & allCharucoCorners[1][n],
+                           & allCharucoIds[1][n], 
+                           & cameraMatrix[1], 
+                           & distCoeffs[1], 
+                           rmap[1][0],
+                           rmap[1][1] );
+        
+        Mat frameLR = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC3);
         Rect r1(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
         Rect r2(FRAME_WIDTH, 0, FRAME_WIDTH, FRAME_HEIGHT);
-        ImagesL[nGoodboard[n]].copyTo(frameLR( r1 ));
-        ImagesR[nGoodboard[n]].copyTo(frameLR( r2 ));
+        putText( Images[0][nGoodboardv[n]], "L", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
+        putText( Images[1][nGoodboardv[n]], "R", Point(5, 140), FONT_HERSHEY_SIMPLEX, 5, Scalar(255, 0, 0), 10);
+        Images[0][nGoodboardv[n]].copyTo(frameLR( r1 ));
+        Images[1][nGoodboardv[n]].copyTo(frameLR( r2 ));
         for( int i = 0; i < frameLR.rows; i += 100 )
             for( int j = 0; j < frameLR.cols; j++ )
                 frameLR.at< Vec3b >(i, j)[2] = 255;
@@ -454,7 +409,7 @@ int main(int argc, char *argv[])  //int argc, char *argv[]
         imwrite( pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(n) + ".png", frameLR);
         cout << pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(n) + ".png" << endl;
     }
-    
+        
     fs.release();
     cout << " --- Calibration data written into file: Stereo_calib_ChArUco.txt" << endl << endl;
     
