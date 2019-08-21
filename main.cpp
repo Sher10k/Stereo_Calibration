@@ -21,9 +21,9 @@ static string pos_dir = "/home/roman/imagesStereo";
 static Size imageSize = Size(FRAME_WIDTH, FRAME_HEIGHT);
 
     // ChArUco board variables
-static Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::PREDEFINED_DICTIONARY_NAME(10));  // DICT_6X6_250 = 10
+static Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary( aruco::DICT_6X6_250 );  // DICT_6X6_250 = 10
     // create charuco board object
-static Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 10, 7, dictionary);
+static Ptr<aruco::CharucoBoard> charucoboard = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 0.03f, 0.02f, dictionary);
 
 static TermCriteria termcritSub( TermCriteria::EPS | TermCriteria::MAX_ITER, 100, 0.0001 );
 
@@ -108,7 +108,7 @@ void read_chessboards( vector < string > * imgPath,
         //Mat imgi = img->at(i);
         Mat imgi = imread( imgPath->at(i) );
         imgi(Rect(0, 0, 2448, 2048)).copyTo(imgi);
-        rotate(imgi, imgi, ROTATE_180);
+        //rotate(imgi, imgi, ROTATE_180);
         Mat imgGray;
         cvtColor( imgi, imgGray, COLOR_BGR2GRAY );
         
@@ -122,14 +122,19 @@ void read_chessboards( vector < string > * imgPath,
                               ids, 
                               aruco::DetectorParameters::create());
         
-        if ( ids.size() == BOARD_X * BOARD_Y / 2 )                          // Проверка удачно найденых углов == 44
+        if ( ids.size() == (BOARD_X * BOARD_Y) / 2 )                          // Проверка удачно найденых углов == 44
         {
                 // SUB PIXEL DETECTION
             for (size_t j = 0; j < corners.size(); j++)
             {
+//                cornerSubPix( imgGray, 
+//                              corners[j], 
+//                              Size(20, 20), 
+//                              Size(-1, -1), 
+//                              termcritSub);
                 cornerSubPix( imgGray, 
                               corners[j], 
-                              Size(20, 20), 
+                              Size(5, 5), 
                               Size(-1, -1), 
                               termcritSub);
             }
@@ -164,7 +169,7 @@ void output_stereo_img( Mat * img,
 {
     Mat imgi = imread( *imgPath );
     imgi(Rect(0, 0, 2448, 2048)).copyTo( *img );
-    rotate(*img, *img, ROTATE_180);
+    //rotate(*img, *img, ROTATE_180);
     Mat tempF;
     
     aruco::drawDetectedMarkers( *img, 
