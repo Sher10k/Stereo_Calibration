@@ -316,12 +316,12 @@ int main()  //int argc, char *argv[]
     
     fs << "intrinsicL" << cameraMatrix[0];
     fs << "distCoeffsL" << distCoeffs[0];
-    //fs << "rvecsL" << rvecs[0];
-    //fs << "tvecsL" << tvecs[0];
+    fs << "rvecsL" << rvecs[0];
+    fs << "tvecsL" << tvecs[0];
     fs << "intrinsicR" << cameraMatrix[1];
     fs << "distCoeffsR" << distCoeffs[1];
-    //fs << "rvecsR" << rvecs[1];
-    //fs << "tvecsR" << tvecs[1];    
+    fs << "rvecsR" << rvecs[1];
+    fs << "tvecsR" << tvecs[1];    
     
 // --- STEP 3 --- Stereo calibration ----------------------------------------//
     vector < vector < Point3f > > objectPoints;
@@ -357,7 +357,7 @@ int main()  //int argc, char *argv[]
                    cameraMatrix[1], 
                    distCoeffs[1], 
                    imageSize, 
-                   R, T, R1,R2, P1, P2, Q, 
+                   R, T, R1, R2, P1, P2, Q, 
                    CALIB_ZERO_DISPARITY, 
                    -1, 
                    imageSize, 
