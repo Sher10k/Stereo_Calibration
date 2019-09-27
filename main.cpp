@@ -8,6 +8,8 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/aruco/charuco.hpp>
+#include <opencv2/aruco/dictionary.hpp>
+#include <getopt.h>
 
 using namespace std;
 using namespace cv;
@@ -45,6 +47,89 @@ static int Stereo_flag =  CALIB_FIX_INTRINSIC;
 static int _numCornersHor = 4; 
 static int _numCornersVer = 3;
 static Size board_sz = Size( _numCornersHor, _numCornersVer ); 
+
+
+struct Args
+{
+    std::string infolder    = "";
+    std::string board       = "";
+    std::string patternSize = "";
+    std::string mod         = "hand";
+
+    bool parse( int argc, char *argv[] )
+    {
+        // set some defaults
+        const char *optstring = "i:b:p:m:h";
+        struct option long_opts[] = {
+                { "input",       required_argument, nullptr, 'i' },
+                { "board",       required_argument, nullptr, 'b' },
+                { "patternSize", required_argument, nullptr, 'p' },
+                { "mod",         optional_argument, nullptr, 'm' },
+                { "help",        no_argument,       nullptr, 'h' },
+                { nullptr,       0,                 nullptr,  0  }
+        };
+
+        int c;
+        while ( ( c = getopt_long ( argc, argv, optstring, long_opts, nullptr ) ) >= 0 ) {
+            switch (c) {
+                case 'i': infolder      = std::string(optarg);  break;
+                case 'b': board         = std::string(optarg);  break;
+                case 'p': patternSize   = std::string(optarg);  break;
+                case 'm': mod           = std::string(optarg);  break;
+                case 'h': default: usage(); return false;
+            }
+        }
+
+        if ( infolder == "" ) {
+            std::cerr << " ! ! ! Please specify a folder with stereo frames" << std::endl;
+            return false;
+        
+        }
+        if ( board  == "" ) {
+            std::cerr << " ! ! ! Please specify the type of calibration board" << std::endl;
+            return false;
+        }
+        if ( patternSize  == "" ) {
+            std::cerr << " ! ! ! Please specify the number of internal corners per "
+                         "row and column or the number of squares of a checkerboard" << std::endl;
+            return false;
+        }
+        
+        cout << "Infolder: \t" << infolder << endl;
+        cout << "Board: \t\t" << board << endl;
+        cout << "PatternSize: \t" << patternSize << endl;
+        cout << "Mod: \t\t" << mod << endl;
+        
+        //dictionary = aruco::getPredefinedDictionary( aruco::DICT_6X6_250 );
+        
+        return true;
+    }
+
+    void usage()
+    {
+        std::cout << "Usage: ./zcm2video [options]" << std::endl
+                  << "" << std::endl
+                  << "    Convert zcm log file to stereo img files" << std::endl
+                  << "    and get list zcm event parametrs" << std::endl
+                  << "" << std::endl
+                  << "Example:" << std::endl
+                  << "    ./zcm2video -i ../zcm.log -o ../stereoIMG -p 5" << std::endl
+                  << "" << std::endl
+                  << "And view list parametrs: " << std::endl
+                  << "    ./zcm2video -i ../zcm.log -l " << std::endl
+                  << "" << std::endl
+                << "Options:" << std::endl
+                << "" << std::endl
+                << "  -h, --help                  Shows this help text and exits" << std::endl
+                << "  -i, --input = logfile       Input log to convert" << std::endl
+                << "  -o, --output = outputfolder Output stereo imgs folder" << std::endl
+                << "  -p, --param = parameters    Input parameters number of frames" << std::endl
+                << "  -l, --list = list           Output list parametrs" << std::endl
+                << "  -d, --debug                 Run a dry run to ensure proper converter setup" << std::endl
+                << std::endl << std::endl;
+    }
+};
+
 
 // --- FUNCTION -------------------------------------------------------------//
 void read_file_image( vector < string > * imgPath )
@@ -182,11 +267,11 @@ void read_Chessboards( vector < string > * imgPath,
         
         if (found)    // Проверка удачно найденых углов
         {
-            cornerSubPix( imgGray,
-                          corners,
-                          Size(11,11),
-                          Size(-1,-1),
-                          TermCriteria( TermCriteria::EPS | TermCriteria::MAX_ITER, 30, 0.1 ) );   // Уточнение углов
+//            cornerSubPix( imgGray,
+//                          corners,
+//                          Size(11,11),
+//                          Size(-1,-1),
+//                          TermCriteria( TermCriteria::EPS | TermCriteria::MAX_ITER, 30, 0.1 ) );   // Уточнение углов
             
             allCorners->push_back(corners);
             
@@ -216,9 +301,10 @@ void output_stereo_img( Mat * img,
     aruco::drawDetectedCornersCharuco( *img, 
                                        *CharucoCorners, 
                                        *CharucoIds);
-    undistort( *img, tempF, 
-               cameraMatrix[0], 
-               distCoeffs[0] );
+//    undistort( *img, tempF, 
+//               cameraMatrix[0], 
+//               distCoeffs[0] );
+    img->copyTo(tempF);
     remap( tempF, *img, 
            rmapX, rmapY, 
            INTER_LINEAR );
@@ -227,8 +313,8 @@ void output_stereo_img( Mat * img,
 void output_stereo_img_chessboard( Mat * img,
                                    string * imgPath,
                                    vector < Point2f > * Corners,
-                                   Matx33d * cameraMatrix, 
-                                   Matx < double, 1, 5 > * distCoeffs,
+                                   Matx33d cameraMatrix, 
+                                   Matx < double, 1, 5 > distCoeffs,
                                    Mat rmapX,
                                    Mat rmapY )
 {
@@ -241,16 +327,20 @@ void output_stereo_img_chessboard( Mat * img,
                            *Corners, 
                            true ); 
     undistort( *img, tempF, 
-               cameraMatrix[0], 
-               distCoeffs[0] );
+               cameraMatrix, 
+               distCoeffs );
     remap( tempF, *img, 
            rmapX, rmapY, 
            INTER_LINEAR );
 }
 
 // --- MAIN -----------------------------------------------------------------//
-int main()  //int argc, char *argv[]
+int main( int argc, char *argv[] )  //int argc, char *argv[]
 {
+    Ptr<aruco::Dictionary> dictionary2 = aruco::getPredefinedDictionary( aruco::DICT_6X6_250 );
+    Ptr<aruco::CharucoBoard> charucoboard2 = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 0.03f, 0.02f, dictionary2);
+    Args args;
+    if ( !args.parse( argc, argv ) ) return 1;
 //    Mat img = imread("ChArUcoBoard.png", IMREAD_COLOR);
 //    resize(img, img, Size(640, 480));
 //    imshow("Output", img);
@@ -386,6 +476,12 @@ int main()  //int argc, char *argv[]
     cout << "distCoeffsR = " << endl << distCoeffs[1] << endl;
     file_params.close();
     cout << " --- --- END READ camera options" << endl;
+    
+    // Zero distors---------------------------------------------------!!!!!!!!!!!!!!!!!
+    for ( int i = 0; i < 2; i++ )
+        for ( int j = 0; j < 5; j++ )
+            distCoeffs[i](0, j) = 0;
+    
 // --- END Read camera internal settings
     
     
@@ -525,10 +621,14 @@ int main()  //int argc, char *argv[]
 //                objectPoints[i].push_back( Point3f( k * squareSize, j * squareSize, 0 ) );
 //    }
     
-    int numSquares = _numCornersHor * _numCornersVer; 
+    int numSquares = _numCornersHor * _numCornersVer;
+    double square_size = 1.0;    
     vector< Point3f > obj;
     for(int j = 0; j < numSquares; j++)
         obj.push_back( Point3d( j / _numCornersHor, j % _numCornersHor, 0.0 ) );
+//    for( int i = 0; i < _numCornersVer; i++)
+//        for( int j = 0; j < _numCornersHor; j++)
+//            obj.push_back( Point3d( j * square_size, i * square_size, 0.0 ) );
     for(unsigned int i = 0; i < nGoodboardv.size(); i++ )
     {
         objectPoints.push_back( obj );
@@ -609,8 +709,8 @@ int main()  //int argc, char *argv[]
         output_stereo_img_chessboard( & imgL,
                                       & imgPath[0][nGoodboardv[n]],
                                       & allCornersL[n],
-                                      & cameraMatrix[0],
-                                      & distCoeffs[0],
+                                      cameraMatrix[0],
+                                      distCoeffs[0],
                                       rmap[0][0],
                                       rmap[0][1] );
             // Right
@@ -626,10 +726,50 @@ int main()  //int argc, char *argv[]
         output_stereo_img_chessboard( & imgR,
                                       & imgPath[1][nGoodboardv[n]],
                                       & allCornersR[n],
-                                      & cameraMatrix[1],
-                                      & distCoeffs[1],
+                                      cameraMatrix[1],
+                                      distCoeffs[1],
                                       rmap[1][0],
                                       rmap[1][1] );
+        
+        Mat tempL, tempR;
+        imgL.copyTo(tempL);
+        imgR.copyTo(tempR);
+            // --- DEPTH MAP
+        Ptr < StereoSGBM > sbm = StereoSGBM::create( 0,                         // minDisparity
+                                                     96,                       // numDisparities must be divisible by 16
+                                                     17,                        // blockSize
+                                                     0,                         // P1
+                                                     2048,                         // P2              0
+                                                     0,                         // disp12MaxDiff       1
+                                                     0,                         // prefilterCap
+                                                     0,                         // uniquenessRatio      10
+                                                     0,                         // speckleWindowSize    100
+                                                     0,                         // speckleRange          32
+                                                     StereoSGBM::MODE_SGBM_3WAY );   // mode MODE_SGBM
+//        resize( tempL, tempL, Size(1024,720), 0, 0, INTER_LINEAR );
+//        resize( tempR, tempR, Size(1024,720), 0, 0, INTER_LINEAR );
+        imwrite( "Remap_frame_L.png", tempL );
+        imwrite( "Remap_frame_R.png", tempR );
+        Mat imgGrey[2]; 
+        cvtColor( tempL, imgGrey[0], COLOR_BGR2GRAY );
+        cvtColor( tempR, imgGrey[1], COLOR_BGR2GRAY );
+        
+            // Calculate
+        Mat imgDisp_bm;
+        sbm->compute( imgGrey[0], imgGrey[1], imgDisp_bm );
+        //sbm->compute( imgLine[0], imgLine[1], imgDisp_bm );
+        //imwrite( "imgDisp_bm.png", imgDisp_bm );
+        
+            // Nomalization
+        double minVal; double maxVal;
+        minMaxLoc( imgDisp_bm, &minVal, &maxVal );
+        Mat imgDispNorm_bm;
+        imgDisp_bm.convertTo( imgDispNorm_bm, CV_8UC1, 255/(maxVal - minVal) );
+        Mat imgDisp_color;
+        applyColorMap( imgDispNorm_bm, imgDisp_color, COLORMAP_RAINBOW );   // COLORMAP_HOT
+        imwrite( "/home/roman/stereoIMG_ChessBoard/ImgCalibStereo_ChessBoard/Сali_pair_of_images_000" + to_string(n) + "_BM.png", imgDisp_color );
+        cout << "/home/roman/stereoIMG_ChessBoard/ImgCalibStereo_ChessBoard/Сali_pair_of_images_000" + to_string(n) + "_BM.png" << endl;
+        
         
         Mat frameLR = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC3);
         Rect r1(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
