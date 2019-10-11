@@ -1,3 +1,19 @@
+/*
+ *  Calibration algorithm 
+ * 
+ * 1) Load image FLZcmCameraBaslerJpegFrame*.png
+ *           and FRZcmCameraBaslerJpegFrame*.png
+ * 
+ * 2) Find couples of images
+ * 
+ * 3) Chessboard & Charuco calibration
+ * 
+ *  
+*/
+
+
+
+
 #include <QCoreApplication>
 #include <iostream>
 #include <fstream>
@@ -10,9 +26,19 @@
 #include <opencv2/aruco/charuco.hpp>
 #include <opencv2/aruco/dictionary.hpp>
 #include <getopt.h>
+#include <string>
+
+#include <Eigen/Eigen>
+#include <Open3D/Open3D.h>
+#include <Open3D/Geometry/Geometry.h>
+#include <Open3D/Geometry/Geometry3D.h>
+#include <Open3D/Geometry/PointCloud.h>
+#include <Open3D/Geometry/Octree.h>
 
 using namespace std;
 using namespace cv;
+using namespace Eigen;
+using namespace open3d;
 
 #define FRAME_WIDTH 2064    //2448
 #define FRAME_HEIGHT 1544   //2048
@@ -44,8 +70,9 @@ static int Stereo_flag =  CALIB_FIX_INTRINSIC;
 //                          CALIB_FIX_K4 | 
 //                          CALIB_FIX_K5;
 
-static int _numCornersHor = 4; 
-static int _numCornersVer = 3;
+    // ChessBoard size
+static int _numCornersHor = 8;  // 4; 
+static int _numCornersVer = 5;  // 3;
 static Size board_sz = Size( _numCornersHor, _numCornersVer ); 
 
 
@@ -131,60 +158,20 @@ struct Args
 };
 
 
-// --- FUNCTION -------------------------------------------------------------//
-void read_file_image( vector < string > * imgPath )
-{
-        // MENU
-    cout << "Input name_dir fo calib image: ";
-    cin >> pos_dir;
-    if (pos_dir == "0") pos_dir = "/home/roman/stereoIMG_ChessBoard/"; //"/home/roman/imagesStereo/";
-    size_t kn = 2;
-    cout << "Which file to use: ";
-    cin >> kn;
-    if (kn <= 0) kn = 5;
-    cout << "Start stereo calibration" << endl;
-    
-    string img_name_L = "FLZcmCameraBaslerJpegFrame*.png";
-    string img_name_R = "FRZcmCameraBaslerJpegFrame*.png";
-    string files_name_L = pos_dir + img_name_L;
-    string files_name_R = pos_dir + img_name_R;
-    vector < String > files_L, files_R;
-    glob( files_name_L, files_L );
-    glob( files_name_R, files_R );
-    
-    set < string > files_set_L, files_set_R;
-    vector < string > files_set_LR;
-    for ( size_t i = 0; i < files_L.size(); i++ ) 
-    {
-        string temp = files_L[i];
-        files_L[i].erase(0, pos_dir.length() + 2);
-        files_set_L.insert(files_L[i]);
-        files_L[i] = temp;
-    }
-    for ( size_t i = 0; i < files_R.size(); i++ ) 
-    {
-        string temp = files_R[i];
-        files_R[i].erase(0, pos_dir.length() + 2);
-        files_set_R.insert(files_R[i]);
-        files_R[i] = temp;
-    }
-    set_intersection( files_set_L.begin(), files_set_L.end(), 
-                      files_set_R.begin(), files_set_R.end(), 
-                      back_inserter(files_set_LR));          // inserter(files_set_LR, files_set_LR.begin())
-    
-    for ( size_t i = 0; i < files_set_LR.size(); i += kn )      // 1/12 files
-    {
-//        Rect myROI(0, 0, FRAME_HEIGHT, FRAME_WIDTH);            // 2048 x 2448
-//        Mat imgL = imread( pos_dir + "FL" + files_set_LR[i] ); // load the image
-//        Mat imgR = imread( pos_dir + "FR" + files_set_LR[i] );
-        imgPath[0].push_back( pos_dir + "FL" + files_set_LR[i] );
-        imgPath[1].push_back( pos_dir + "FR" + files_set_LR[i] );
-//        imgL(Rect(0, 0, 2448, 2048)).copyTo(imgL);
-//        imgR(Rect(0, 0, 2448, 2048)).copyTo(imgR);
-//        rotate(imgL, imgL, ROTATE_180);
-//        rotate(imgR, imgR, ROTATE_180);
-    }
-}
+
+// --- FUNCTION ---------------------------------------------------------------------------------//
+
+    // Prototype function
+int get_dictionary( string str_board );                             // Get number charuco board
+vector< float > parser_pat( string patternSize );                   // Board pattern size parser
+
+void read_file_image( vector < string > *imgPath );                 // Read image path
+
+int detectedChessBoard( vector < string > *imgPath,                 // Detecting checkerboard corners
+                        vector< vector< Point2f > > * allCorners,   // and erasing intersecting boards 
+                        set < unsigned int > * nGoodboard );        // (threshold 80%)
+
+
 
 void read_CharucoBoard( vector < string > * imgPath,
                         vector < vector< vector< Point2f > > > * allCorners, 
@@ -286,8 +273,6 @@ void output_stereo_img( Mat * img,
                         vector < vector < Point2f > > * Corners, 
                         Mat * CharucoCorners,
                         Mat * CharucoIds,
-                        Matx33d * cameraMatrix, 
-                        Matx < double, 1, 5 > * distCoeffs,
                         Mat rmapX,
                         Mat rmapY )
 {
@@ -334,39 +319,54 @@ void output_stereo_img_chessboard( Mat * img,
            INTER_LINEAR );
 }
 
-// --- MAIN -----------------------------------------------------------------//
+// --- MAIN -------------------------------------------------------------------------------------//
 int main( int argc, char *argv[] )  //int argc, char *argv[]
 {
-    Ptr<aruco::Dictionary> dictionary2 = aruco::getPredefinedDictionary( aruco::DICT_6X6_250 );
-    Ptr<aruco::CharucoBoard> charucoboard2 = aruco::CharucoBoard::create(BOARD_X, BOARD_Y, 0.03f, 0.02f, dictionary2);
-    Args args;
-    if ( !args.parse( argc, argv ) ) return 1;
+    
 //    Mat img = imread("ChArUcoBoard.png", IMREAD_COLOR);
 //    resize(img, img, Size(640, 480));
 //    imshow("Output", img);
     
-// --- MAIN VARIABLES -------------------------------------------------------// 
+// --- INPUT PARAMETERS -------------------------------------------------------------------------//
+    Args args;
+    if ( !args.parse( argc, argv ) ) return 1;
+    
+// --- MAIN VARIABLES ---------------------------------------------------------------------------//
     vector < string > imgPath[2];                                           // FILES IMAGE
     FileStorage fs;
-//    fs.open( "Stereo_calib_ChArUco.txt", FileStorage::WRITE );    // Write in file data calibration
-    fs.open( "Stereo_calib_ChessBoard.txt", FileStorage::WRITE );    // Write in file data calibration
-
-// --- STEP 1 --- Load left and right frames --------------------------------//
-    read_file_image( & imgPath[0] );
+    fs.open( "Stereo_calib_RESULT.txt", FileStorage::WRITE );               // Text file for write
     
-// --- STEP 2 --- Calibration left and right camera -----------------------------------//
-    Mat frame[2];
+// --- STEP 1 --- Load left and right frames ----------------------------------------------------//
+    read_file_image( &imgPath[0] );
     
-        // ChessBoard
+    
+// --- STEP 2 --- Calibration left and right camera ---------------------------------------------//
+        // ChessBoard calibration
+    if ( (args.board == "chess") || (args.board == "Chess") || (args.board == "CHESS") || 
+         (args.board == "Chessboard") || (args.board == "ChessBoard") || (args.board == "CHESSBOARD") )
+    {
+        vector < float > patternSize;                   // H x W x Size_square x Size_marker
+        patternSize = parser_pat( args.patternSize );
+        
+        vector< vector< Point2f > > allCorners[2];      // All corners of chess board
+        set < unsigned > nGoodboard[2];                 // Well found corners of chess board
+        
+        
+    }
+        // Charuco calibration
+    else
+    {
+        
+    }
     vector< vector< Point2f > > allCornersL;
     vector< vector< Point2f > > allCornersR;
     set < unsigned int > nGoodboard[2];
     read_Chessboards( & imgPath[0],
                       & allCornersL,
-                      & nGoodboard[0] );
+                      & nGoodboard[0]);
     read_Chessboards( & imgPath[1],
                       & allCornersR,
-                      & nGoodboard[1] );
+                      & nGoodboard[1]);
     cout << "Элементы множества nGoodboard[0]: ";
     copy( nGoodboard[0].begin(), nGoodboard[0].end(), ostream_iterator<int>(cout, " "));
     cout << endl;
@@ -760,6 +760,7 @@ int main( int argc, char *argv[] )  //int argc, char *argv[]
         //sbm->compute( imgLine[0], imgLine[1], imgDisp_bm );
         //imwrite( "imgDisp_bm.png", imgDisp_bm );
         
+        
             // Nomalization
         double minVal; double maxVal;
         minMaxLoc( imgDisp_bm, &minVal, &maxVal );
@@ -767,8 +768,28 @@ int main( int argc, char *argv[] )  //int argc, char *argv[]
         imgDisp_bm.convertTo( imgDispNorm_bm, CV_8UC1, 255/(maxVal - minVal) );
         Mat imgDisp_color;
         applyColorMap( imgDispNorm_bm, imgDisp_color, COLORMAP_RAINBOW );   // COLORMAP_HOT
-        imwrite( "/home/roman/stereoIMG_ChessBoard/ImgCalibStereo_ChessBoard/Сali_pair_of_images_000" + to_string(n) + "_BM.png", imgDisp_color );
-        cout << "/home/roman/stereoIMG_ChessBoard/ImgCalibStereo_ChessBoard/Сali_pair_of_images_000" + to_string(n) + "_BM.png" << endl;
+        imwrite( pos_dir + "ImgCalibStereo_ChessBoard_A0/Сali_pair_of_images_000" + to_string(n) + "_BM.png", imgDisp_color );
+        cout << pos_dir + "ImgCalibStereo_ChessBoard_A0/Сali_pair_of_images_000" + to_string(n) + "_BM.png" << endl;
+        
+        
+//            // Reprojects a disparity image to 3D space
+//        Mat points3D;
+//        reprojectImageTo3D( imgDispNorm_bm, points3D, Q, false );   // imgDispNorm_bm imgDisp_bm
+        
+//        auto pcl_ptr = make_shared< geometry::PointCloud >();
+//        for ( size_t i = 0; i < points3D.total(); i++ )
+//        {
+//            Vector3d temPoint, tempColor;
+//            temPoint.x() = static_cast< double >( points3D.at< Vec3f >( static_cast<int>(i) ).val[0] );
+//            temPoint.y() = static_cast< double >( points3D.at< Vec3f >( static_cast<int>(i) ).val[1] );
+//            temPoint.z() = static_cast< double >( points3D.at< Vec3f >( static_cast<int>(i) ).val[2] );
+//            tempColor.x() = static_cast< double >( tempL.at< Vec3b >( static_cast<int>(i) ).val[2] );
+//            tempColor.y() = static_cast< double >( tempL.at< Vec3b >( static_cast<int>(i) ).val[1] );
+//            tempColor.z() = static_cast< double >( tempL.at< Vec3b >( static_cast<int>(i) ).val[0] );
+//            pcl_ptr->points_.push_back( temPoint );
+//            pcl_ptr->colors_.push_back( tempColor );
+//        }
+//        visualization::DrawGeometries( {pcl_ptr}, "Open3D", 1600, 900 );
         
         
         Mat frameLR = Mat::zeros(Size(2 * FRAME_WIDTH, FRAME_HEIGHT), CV_8UC3);
@@ -784,14 +805,156 @@ int main( int argc, char *argv[] )  //int argc, char *argv[]
         //imshow("calibration", frameLR);
 //        imwrite( pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(n) + ".png", frameLR);
 //        cout << pos_dir + "/ImgCalibStereo/Сali_pair_of_images_000" + to_string(n) + ".png" << endl;
-        imwrite( "/home/roman/stereoIMG_ChessBoard/ImgCalibStereo_ChessBoard/Сali_pair_of_images_000" + to_string(n) + ".png", frameLR );
-        cout << "/home/roman/stereoIMG_ChessBoard/ImgCalibStereo_ChessBoard/Сali_pair_of_images_000" + to_string(n) + ".png" << endl;
+        imwrite( pos_dir + "ImgCalibStereo_ChessBoard_A0/Сali_pair_of_images_000" + to_string(n) + ".png", frameLR );
+        cout << pos_dir + "ImgCalibStereo_ChessBoard_A0/Сali_pair_of_images_000" + to_string(n) + ".png" << endl;
     }
         
     fs.release();
-    cout << " --- Calibration data written into file: Stereo_calib_ChArUco.txt" << endl << endl;
+    //cout << " --- Calibration data written into file: Stereo_calib_ChArUco.txt" << endl << endl;
+    cout << " --- Calibration data written into file: Stereo_calib_ChessBoard_A0.txt" << endl << endl;
     
     //cin.get();
     waitKey(0);
     return 0;   // a.exec();
+}
+
+vector< float > parser_pat( string patternSize )
+{
+    vector < float > pS;
+    std::string::size_type sz;
+    string num;
+    for ( auto i : patternSize)
+    {
+        if ( ((int(i) > 47) && (int(i) < 58)) || (int(i) == 46) )
+        {
+            num += i;
+        }
+        else
+        {
+            if ( !num.empty() ) 
+            {
+                pS.push_back( stof(num, &sz) );
+                num.clear();
+            }
+        }
+    }
+    if ( !num.empty() ) 
+        pS.push_back( stof(num, &sz) );
+    return pS;
+}
+
+void read_file_image( vector < string > * imgPath )
+{
+        // MENU
+    cout << "Input name_dir fo calib image: ";
+    cin >> pos_dir;
+    if (pos_dir == "0") pos_dir = "/home/roman/stereoIMG_ChessBoard_A0/"; //"/home/roman/imagesStereo/";
+    size_t kn = 2;
+    cout << "Which file to use: ";
+    cin >> kn;
+    if (kn <= 0) kn = 5;
+    cout << "Start stereo calibration" << endl;
+    
+    string img_name_L = "FLZcmCameraBaslerJpegFrame*.png";
+    string img_name_R = "FRZcmCameraBaslerJpegFrame*.png";
+    string files_name_L = pos_dir + img_name_L;
+    string files_name_R = pos_dir + img_name_R;
+    vector < String > files_L, files_R;
+    glob( files_name_L, files_L );
+    glob( files_name_R, files_R );
+    
+    set < string > files_set_L, files_set_R;
+    vector < string > files_set_LR;
+    for ( size_t i = 0; i < files_L.size(); i++ ) 
+    {
+        string temp = files_L[i];
+        files_L[i].erase(0, pos_dir.length() + 2);
+        files_set_L.insert(files_L[i]);
+        files_L[i] = temp;
+    }
+    for ( size_t i = 0; i < files_R.size(); i++ ) 
+    {
+        string temp = files_R[i];
+        files_R[i].erase(0, pos_dir.length() + 2);
+        files_set_R.insert(files_R[i]);
+        files_R[i] = temp;
+    }
+    set_intersection( files_set_L.begin(), files_set_L.end(), 
+                      files_set_R.begin(), files_set_R.end(), 
+                      back_inserter(files_set_LR));          // inserter(files_set_LR, files_set_LR.begin())
+    
+    for ( size_t i = 0; i < files_set_LR.size(); i += kn )      // 1/12 files
+    {
+//        Rect myROI(0, 0, FRAME_HEIGHT, FRAME_WIDTH);            // 2048 x 2448
+//        Mat imgL = imread( pos_dir + "FL" + files_set_LR[i] ); // load the image
+//        Mat imgR = imread( pos_dir + "FR" + files_set_LR[i] );
+        imgPath[0].push_back( pos_dir + "FL" + files_set_LR[i] );
+        imgPath[1].push_back( pos_dir + "FR" + files_set_LR[i] );
+//        imgL(Rect(0, 0, 2448, 2048)).copyTo(imgL);
+//        imgR(Rect(0, 0, 2448, 2048)).copyTo(imgR);
+//        rotate(imgL, imgL, ROTATE_180);
+//        rotate(imgR, imgR, ROTATE_180);
+    }
+}
+
+int detectedChessBoard( vector < string > *imgPath, 
+                        vector< vector< Point2f > > * allCorners,
+                        set < unsigned int > * nGoodboard )
+{
+    for (unsigned int i = 0; i < imgPath->size(); i++)                        // Цикл для определенного числа калибровочных кадров img->size()
+    {
+        Mat imgi = imread( imgPath->at(i) );
+        Mat imgGray;
+        cvtColor( imgi, imgGray, COLOR_BGR2GRAY );
+        
+        vector< Point2f > corners;
+        
+            // Find cernels on chessboard
+        bool found = findChessboardCorners( imgGray,
+                                            board_sz,
+                                            corners,
+                                            CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE ); //CALIB_CB_NORMALIZE_IMAGE, CV_CALIB_CB_FILTER_QUADS
+        
+        if (found)    // Проверка удачно найденых углов
+        {
+//            cornerSubPix( imgGray,
+//                          corners,
+//                          Size(11,11),
+//                          Size(-1,-1),
+//                          TermCriteria( TermCriteria::EPS | TermCriteria::MAX_ITER, 30, 0.1 ) );   // Уточнение углов
+            
+            allCorners->push_back(corners);
+            
+            //nGoodboard->push_back(i);
+            nGoodboard->insert(i);
+        }
+    }
+    return 0;
+}
+
+int get_dictionary( string str_board )
+{
+    if ( str_board == "DICT_4X4_50" ) return 0;
+    if ( str_board == "DICT_4X4_100" ) return 1;
+    if ( str_board == "DICT_4X4_250" ) return 2;
+    if ( str_board == "DICT_4X4_1000" ) return 3;
+    if ( str_board == "DICT_5X5_50" ) return 4;
+    if ( str_board == "DICT_5X5_100" ) return 5;
+    if ( str_board == "DICT_5X5_250" ) return 6;
+    if ( str_board == "DICT_5X5_1000" ) return 7;
+    if ( str_board == "DICT_6X6_50" ) return 8;
+    if ( str_board == "DICT_6X6_100" ) return 9;
+    if ( str_board == "DICT_6X6_250" ) return 10;
+    if ( str_board == "DICT_6X6_1000" ) return 11;
+    if ( str_board == "DICT_7X7_50" ) return 12;
+    if ( str_board == "DICT_7X7_100" ) return 13;
+    if ( str_board == "DICT_7X7_250" ) return 14;
+    if ( str_board == "DICT_7X7_1000" ) return 15;
+    if ( str_board == "DICT_ARUCO_ORIGINAL" ) return 16;
+    if ( str_board == "DICT_APRILTAG_16h5" ) return 17;
+    if ( str_board == "DICT_APRILTAG_25h9" ) return 18;
+    if ( str_board == "DICT_APRILTAG_36h10" ) return 19;
+    if ( str_board == "DICT_APRILTAG_36h11" ) return 20;
+    cout << " ! ! ! Error, incorrect name board ! ! ! " << endl;
+    exit(0);
 }

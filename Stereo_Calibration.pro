@@ -23,5 +23,19 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 CONFIG      *= link_pkgconfig
+PKGCONFIG   += eigen3
 PKGCONFIG   *= opencv4
-PKGCONFIG   *= zcm
+#PKGCONFIG   *= zcm
+
+
+LIBS += -lOpen3D
+LIBS += -lqhullstatic
+LIBS += -lqhullcpp
+LIBS += -ljsoncpp
+LIBS += -lturbojpeg
+LIBS += -lfmt
+LIBS += -lglfw3
+LIBS += -ltinyfiledialogs
+LIBS += -ltinyobjloader
+
+QMAKE_LFLAGS += -fopenmp
