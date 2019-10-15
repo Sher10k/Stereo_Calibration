@@ -165,12 +165,11 @@ struct Args
 int get_dictionary( string str_board );                             // Get number charuco board
 vector< float > parser_pat( string patternSize );                   // Board pattern size parser
 
-void read_file_image( vector < string > *imgPath );                 // Read image path
+void read_file_image( vector < string > (&imgPath)[2] );                 // Read image path
 
-int detectedChessBoard( vector < string > *imgPath,                 // Detecting checkerboard corners
-                        vector< vector< Point2f > > * allCorners,   // and erasing intersecting boards 
-                        set < unsigned int > * nGoodboard );        // (threshold 80%)
-
+int detectedChessBoard( vector < string > (&imgPath)[2],                 // Detecting checkerboard corners
+                        vector< vector< Point2f > > (&allCorners)[2],    // and erasing intersecting boards (threshold 80%)
+                        vector < float > &patternSize );
 
 
 void read_CharucoBoard( vector < string > * imgPath,
@@ -337,7 +336,7 @@ int main( int argc, char *argv[] )  //int argc, char *argv[]
     fs.open( "Stereo_calib_RESULT.txt", FileStorage::WRITE );               // Text file for write
     
 // --- STEP 1 --- Load left and right frames ----------------------------------------------------//
-    read_file_image( &imgPath[0] );
+    read_file_image( imgPath );
     
     
 // --- STEP 2 --- Calibration left and right camera ---------------------------------------------//
@@ -349,8 +348,9 @@ int main( int argc, char *argv[] )  //int argc, char *argv[]
         patternSize = parser_pat( args.patternSize );
         
         vector< vector< Point2f > > allCorners[2];      // All corners of chess board
-        set < unsigned > nGoodboard[2];                 // Well found corners of chess board
+        //set < unsigned > nGoodboard[2];                 // Well found corners of chess board
         
+        detectedChessBoard( imgPath, allCorners, patternSize );
         
     }
         // Charuco calibration
@@ -843,7 +843,7 @@ vector< float > parser_pat( string patternSize )
     return pS;
 }
 
-void read_file_image( vector < string > * imgPath )
+void read_file_image( vector < string > (&imgPath)[2] )
 {
         // MENU
     cout << "Input name_dir fo calib image: ";
@@ -879,6 +879,7 @@ void read_file_image( vector < string > * imgPath )
         files_set_R.insert(files_R[i]);
         files_R[i] = temp;
     }
+        // Find pairs of stereo pair images
     set_intersection( files_set_L.begin(), files_set_L.end(), 
                       files_set_R.begin(), files_set_R.end(), 
                       back_inserter(files_set_LR));          // inserter(files_set_LR, files_set_LR.begin())
@@ -897,36 +898,78 @@ void read_file_image( vector < string > * imgPath )
     }
 }
 
-int detectedChessBoard( vector < string > *imgPath, 
-                        vector< vector< Point2f > > * allCorners,
-                        set < unsigned int > * nGoodboard )
+int detectedChessBoard( vector < string > (&imgPath)[2], 
+                        vector< vector< Point2f > > (&allCorners)[2],
+                        vector < float > &patternSize )
 {
-    for (unsigned int i = 0; i < imgPath->size(); i++)                        // Цикл для определенного числа калибровочных кадров img->size()
+    Size board_sz = Size( int(patternSize[0]), int(patternSize[1]) );
+    if (imgPath[0].size() != imgPath[1].size()) 
     {
-        Mat imgi = imread( imgPath->at(i) );
-        Mat imgGray;
-        cvtColor( imgi, imgGray, COLOR_BGR2GRAY );
-        
-        vector< Point2f > corners;
+        cout << "ImgPath sizes are not equal" << endl;
+        exit(0);
+    }
+    for (unsigned int i = 0; i < imgPath[0].size(); i++)                        // Цикл для определенного числа калибровочных кадров img->size()
+    {
+        Mat imgiL = imread( imgPath[0].at(i) );
+        Mat imgiR = imread( imgPath[1].at(i) );
+        Mat imgGrayL, imgGrayR;
+        cvtColor( imgiL, imgGrayL, COLOR_BGR2GRAY );
+        cvtColor( imgiR, imgGrayR, COLOR_BGR2GRAY );
         
             // Find cernels on chessboard
-        bool found = findChessboardCorners( imgGray,
-                                            board_sz,
-                                            corners,
-                                            CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE ); //CALIB_CB_NORMALIZE_IMAGE, CV_CALIB_CB_FILTER_QUADS
+        vector< Point2f > cornersL, cornersR;
+        bool foundL = findChessboardCorners( imgGrayL,
+                                             board_sz,
+                                             cornersL,
+                                             CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE ); //CALIB_CB_NORMALIZE_IMAGE, CV_CALIB_CB_FILTER_QUADS
+        bool foundR = findChessboardCorners( imgGrayR,
+                                             board_sz,
+                                             cornersR,
+                                             CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE );
         
-        if (found)    // Проверка удачно найденых углов
+        if ( foundL && foundR )    // Проверка удачно найденых углов
         {
 //            cornerSubPix( imgGray,
 //                          corners,
 //                          Size(11,11),
 //                          Size(-1,-1),
 //                          TermCriteria( TermCriteria::EPS | TermCriteria::MAX_ITER, 30, 0.1 ) );   // Уточнение углов
+            Mat final = Mat::zeros(imgiL.size(), CV_8UC3);
+            Mat mask = Mat::zeros(imgiL.size(), CV_8UC1);
+            vector< vector< Point > > vpts;
+            vector< Point > pts;
+            pts.push_back( cornersL.at( 0 ) );
+            pts.push_back( cornersL.at( unsigned(patternSize[0]) - 1 ) );
+            pts.push_back( cornersL.at( unsigned(patternSize[0]) * unsigned(patternSize[1]) - 1) );
+            pts.push_back( cornersL.at( unsigned(patternSize[0]) * ( unsigned(patternSize[1]) - 1 )) );
+            vpts.push_back( pts );
+            fillPoly( mask, vpts, Scalar(255, 255, 255), 8, 0 );
+            bitwise_and(imgiL, imgiL, final, mask);
+            //waitKey(0);
             
-            allCorners->push_back(corners);
+            
+            drawChessboardCorners( imgiL,
+                                   board_sz,
+                                   cornersL, 
+                                   true ); 
+            drawChessboardCorners( imgiR,
+                                   board_sz,
+                                   cornersR, 
+                                   true );
+            resize( imgiL, imgiL, Size(640,480), 0, 0, INTER_LINEAR );
+            resize( imgiR, imgiR, Size(640,480), 0, 0, INTER_LINEAR );
+            resize( mask, mask, Size(640,480), 0, 0, INTER_LINEAR );
+            resize( final, final, Size(640,480), 0, 0, INTER_LINEAR );
+            imshow("Mask", mask);
+            imshow("Result", final);
+            //imshow("Source", imgiL);
+            imshow("imgL", imgiL);
+            //imshow("imgR", imgiR);
+            waitKey(0);
+            allCorners[0].push_back(cornersR);
             
             //nGoodboard->push_back(i);
-            nGoodboard->insert(i);
+            //nGoodboard[0].insert(i);
         }
     }
     return 0;

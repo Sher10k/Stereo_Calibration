@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 4.10.0, 2019-10-11T18:08:53. -->
+<!-- Written by QtCreator 4.10.0, 2019-10-15T12:16:33. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -306,7 +306,7 @@
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Stereo_Calibration</value>
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.Qt4RunConfiguration:/home/roman/Stereo_Calibration/Stereo_Calibration.pro</value>
-    <value type="QString" key="RunConfiguration.Arguments">-i /home/roman/stereoIMG_ChessBoard_A0/ -b CHESS -p 8,5 - m manual</value>
+    <value type="QString" key="RunConfiguration.Arguments">-i /home/roman/stereoIMG_ChessBoard_A0/ -b CHESS -p 5,8 - m manual</value>
     <value type="uint" key="RunConfiguration.QmlDebugServerPort">3768</value>
     <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>
     <value type="bool" key="RunConfiguration.UseCppDebuggerAuto">true</value>
